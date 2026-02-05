@@ -1,0 +1,27 @@
+# Simple MCPPlus Wrapper Configuration
+#
+# This is a minimal configuration for using MCPPlus with an MCP client.
+# Uses a cheaper LLM for post-processing to maximize cost savings.
+
+---
+kind: llm
+spec:
+  name: llm-postprocess
+  type: openai
+  config:
+    model_name: gpt-4o-mini             # Cheaper model for post-processing
+
+---
+kind: wrapper
+spec:
+  enabled: true                         # Enable post-processing
+  token_threshold: 2000                 # Process outputs above 2000 tokens
+  post_process_llm: llm-postprocess     # Use separate cheaper LLM
+  max_iterations: 3                     # Max refinement attempts
+  execution_timeout: 10                 # Code execution timeout (seconds)
+  skip_iteration_on_size_failure: false # Retry if both outputs are too large
+
+# Cost optimization strategy:
+# - Main agent uses gpt-4o (expensive but capable)
+# - Post-processing uses gpt-4o-mini (10x cheaper, sufficient for filtering)
+# - Result: Massive token reduction + minimal post-processing cost

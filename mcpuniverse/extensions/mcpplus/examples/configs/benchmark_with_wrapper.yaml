@@ -1,0 +1,53 @@
+# Complete Benchmark Configuration with MCPPlus
+#
+# This configuration is identical to a standard MCP-Universe benchmark
+# except for the addition of:
+# 1. Post-processing LLM definition (llm-postprocess)
+# 2. Wrapper configuration block
+#
+# Everything else remains the same - no changes to agent instructions needed.
+
+---
+kind: llm
+spec:
+  name: llm-main
+  type: openai
+  config:
+    model_name: gpt-4o
+
+---
+kind: llm
+spec:
+  name: llm-postprocess
+  type: openai
+  config:
+    model_name: gpt-4o-mini             # Cheaper LLM for post-processing
+
+---
+kind: wrapper
+spec:
+  enabled: true
+  token_threshold: 2000
+  post_process_llm: llm-postprocess
+  max_iterations: 3
+  execution_timeout: 10
+  skip_iteration_on_size_failure: false
+
+---
+kind: agent
+spec:
+  name: react-agent
+  type: react
+  config:
+    llm: llm-main
+    instruction: You are a helpful assistant.
+    servers:
+      - name: web-search
+
+---
+kind: benchmark
+spec:
+  description: Test agent with MCPPlus post-processing
+  agent: react-agent
+  tasks:
+    - dummy/tasks/weather_1.json
