@@ -205,3 +205,6 @@ github_state/
 tests/data/postgres/
 tests/data/playwright_webarena/
 tests/benchmark/*_run_many_llms*.py
+mcpuniverse/benchmark/configs/deepresearch/browsecomp
+mcpuniverse/benchmark/configs/deepresearch/gaia_val_text_only
+mcpuniverse/benchmark/configs/deepresearch/hle_text_only

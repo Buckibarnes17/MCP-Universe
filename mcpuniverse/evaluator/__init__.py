@@ -11,6 +11,7 @@ from .yfinance.functions import *
 from .blender.functions import *
 from .playwright.functions import *
 from .google_search.functions import *
+from .deepresearch.functions import *
 from .notion.functions import *
 from .weather.functions import *
 # from .mcpmark.functions import *  # Temporarily disabled due to psycopg2 dependency

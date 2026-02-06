@@ -27,6 +27,7 @@ class OpenAIConfig(BaseConfig):
     Attributes:
         model_name (str): The name of the OpenAI model to use (default: "gpt-4o").
         api_key (str): The OpenAI API key (default: environment variable OPENAI_API_KEY).
+        base_url (str): The base URL for the OpenAI API (default: "https://api.openai.com/v1").
         temperature (float): Controls randomness in output (default: 1.0).
         top_p (float): Controls diversity of output (default: 1.0).
         frequency_penalty (float): Penalizes frequent token use (default: 0.0).
@@ -34,9 +35,12 @@ class OpenAIConfig(BaseConfig):
         max_completion_tokens (int): Maximum number of tokens in the completion (default: 2048).
         reasoning_effort (str): The reasoning effort to use (default: "medium").
         seed (int): Random seed for reproducibility (default: 12345).
+        timeout (int): Request timeout in seconds (default: 60).
+        parallel_tool_calls (bool): Whether to enable parallel tool calls (default: True).
     """
     model_name: str = "gpt-4.1"
     api_key: str = os.getenv("OPENAI_API_KEY", "")
+    base_url: str = os.getenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
     temperature: float = 1.0
     top_p: float = 1.0
     frequency_penalty: float = 0.0
@@ -44,6 +48,8 @@ class OpenAIConfig(BaseConfig):
     max_completion_tokens: int = 10000
     reasoning_effort: str = "medium"
     seed: int = 12345
+    timeout: int = 60
+    parallel_tool_calls: bool = True
 
 
 class OpenAIModel(BaseLLM):
@@ -96,7 +102,7 @@ class OpenAIModel(BaseLLM):
 
         for attempt in range(max_retries + 1):
             try:
-                client = OpenAI(api_key=self.config.api_key)
+                client = OpenAI(api_key=self.config.api_key, base_url=self.config.base_url)
                 # Models support the 'reasoning_effort' parameter.
                 # This set can be extended as new models are introduced.
                 _models_with_reasoning_effort_support = {"gpt-5", "o3", "o4-mini", "gpt-5-high"}
@@ -113,12 +119,13 @@ class OpenAIModel(BaseLLM):
                         messages=messages,
                         model=self.config.model_name,
                         temperature=self.config.temperature,
-                        timeout=int(kwargs.get("timeout", 60)),
                         top_p=self.config.top_p,
                         frequency_penalty=self.config.frequency_penalty,
                         presence_penalty=self.config.presence_penalty,
                         max_completion_tokens=self.config.max_completion_tokens,
                         seed=self.config.seed,
+                        timeout=self.config.timeout,
+                        parallel_tool_calls=self.config.parallel_tool_calls,
                         **kwargs
                     )
                     # If tools are provided, return the entire response object
@@ -132,13 +139,13 @@ class OpenAIModel(BaseLLM):
                     messages=messages,
                     model=self.config.model_name,
                     temperature=self.config.temperature,
-                    timeout=int(kwargs.get("timeout", 60)),
                     top_p=self.config.top_p,
                     frequency_penalty=self.config.frequency_penalty,
                     presence_penalty=self.config.presence_penalty,
                     max_completion_tokens=self.config.max_completion_tokens,
                     seed=self.config.seed,
                     response_format=response_format,
+                    parallel_tool_calls=self.config.parallel_tool_calls,
                     **kwargs
                 )
                 # If tools are provided, return the entire response object

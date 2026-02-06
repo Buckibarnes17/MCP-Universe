@@ -3,19 +3,24 @@ Gemini LLMs
 """
 # pylint: disable=broad-exception-caught
 import os
+import base64
 import json
 import uuid
 import time
 import logging
+import traceback
 from dataclasses import dataclass
-from typing import Dict, Union, Optional, Type, List, Any
+from typing import Any, Dict, List, Optional, Type, Union
+
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types
-from dotenv import load_dotenv
+from google.genai.types import Content, FunctionCall, Part
 from pydantic import BaseModel as PydanticBaseModel
 
 from mcpuniverse.common.config import BaseConfig
 from mcpuniverse.common.context import Context
+
 from .base import BaseLLM
 
 load_dotenv()
@@ -97,19 +102,11 @@ class GeminiModel(BaseLLM):
         for attempt in range(max_retries + 1):
             try:
                 client = genai.Client(api_key=self.config.api_key)
-                system_messages, formatted_messages = [], []
-                for message in messages:
-                    if message["role"] == "system":
-                        if message.get("content"):  # Only add non-empty content
-                            system_messages.append(message["content"])
-                    else:
-                        if message.get("content"):  # Only add non-empty content
-                            formatted_messages.append(message["content"])
-                system_message = "\n\n".join(system_messages)
+                system_message, formatted_messages = self._create_gemini_style_messages(messages)
 
                 config_dict = {
                     "http_options": types.HttpOptions(
-                        timeout=int(kwargs.get("timeout", 30)) * 1000
+                        timeout=int(kwargs.get("timeout", 300)) * 1000
                     ),
                     "system_instruction": system_message,
                     "temperature": self.config.temperature,
@@ -117,7 +114,10 @@ class GeminiModel(BaseLLM):
                     "frequency_penalty": self.config.frequency_penalty,
                     "presence_penalty": self.config.presence_penalty,
                     "max_output_tokens": self.config.max_completion_tokens,
-                    "seed": self.config.seed
+                    "seed": self.config.seed,
+                    "thinking_config": types.ThinkingConfig(
+                        include_thoughts=True,
+                    )
                 }
 
                 # Handle tools if provided - convert from OpenAI format to Gemini format
@@ -132,15 +132,12 @@ class GeminiModel(BaseLLM):
 
                 config = types.GenerateContentConfig(**config_dict)
 
-                # Ensure we have content to send
-                content_text = "\n\n".join(formatted_messages) if formatted_messages else ""
-
+                # # Ensure we have content to send
                 chat = client.models.generate_content(
                     model=self.config.model_name,
                     config=config,
-                    contents=content_text
+                    contents=formatted_messages
                 )
-
                 # If tools are provided, return a response object similar to OpenAI's format
                 if 'tools' in kwargs:
                     return self._create_openai_style_response(chat)
@@ -164,6 +161,7 @@ class GeminiModel(BaseLLM):
                         logging.warning("All %d attempts failed. Error: %s", max_retries + 1, e)
                     else:
                         logging.error("Non-retryable error occurred: %s", e)
+                        traceback.print_exc()
                     return None
 
                 # Calculate delay with exponential backoff
@@ -259,18 +257,23 @@ class GeminiModel(BaseLLM):
         @dataclass
         class Message:
             """Message class for OpenAI-style response"""
-            content: Optional[str] = None
+            content: Optional[List[Any]] = None
             tool_calls: Optional[List[Any]] = None
+            thought: Optional[List[bool]] = None
+            thought_signature: Optional[List[Any]] = None
 
         @dataclass
         class Response:
             """Response class for OpenAI-style response"""
             choices: List[Choice]
             model: str
+            usage: Dict[str, int]
 
         # Extract content and tool calls from Gemini's response
         openai_tool_calls = []
-        text_content = ""
+        text_content = []
+        thought_signature = []
+        thought = []
 
         # Check if response has candidates
         if hasattr(gemini_response, 'candidates') and gemini_response.candidates:
@@ -280,7 +283,19 @@ class GeminiModel(BaseLLM):
                 if hasattr(content, 'parts') and content.parts:
                     for part in content.parts:
                         if hasattr(part, 'text') and part.text:
-                            text_content += part.text
+                            if hasattr(part, "thought") and part.thought is not None:
+                                thought.append(True)
+                            else:
+                                thought.append(False)
+                            if hasattr(part, "thought_signature") and part.thought_signature:
+                                thought_signature.append(
+                                    base64.b64encode(part.thought_signature).decode(
+                                        "ascii"
+                                    )
+                                )
+                            else:
+                                thought_signature.append(None)
+                            text_content.append(part.text)
                         elif hasattr(part, 'function_call') and part.function_call:
                             # Convert Gemini function call to OpenAI format
                             func_call = part.function_call
@@ -296,8 +311,13 @@ class GeminiModel(BaseLLM):
                                         json.dumps(dict(func_call.args))
                                         if func_call.args else "{}"
                                     )
-                                }
+                                },
                             }
+                            # Keep the thought_signature for multi-turn reasoning
+                            if hasattr(part, "thought_signature") and part.thought_signature:
+                                tool_call["thought_signature"] = base64.b64encode(
+                                    part.thought_signature
+                                ).decode("ascii")
                             openai_tool_calls.append(tool_call)
 
         # Set content and tool_calls
@@ -305,10 +325,110 @@ class GeminiModel(BaseLLM):
         tool_calls = openai_tool_calls if openai_tool_calls else None
 
         # Create the response structure
-        message = Message(content=content, tool_calls=tool_calls)
+        message = Message(
+            content=content,
+            thought=thought,
+            tool_calls=tool_calls,
+            thought_signature=thought_signature,
+        )
         choice = Choice(message)
-        response = Response(choices=[choice], model=self.config.model_name)
+        usage = {
+            "input_tokens": gemini_response.usage_metadata.prompt_token_count,
+            "output_tokens": (
+                gemini_response.usage_metadata.total_token_count
+                - gemini_response.usage_metadata.prompt_token_count
+            ),
+        }
+        response = Response(choices=[choice], model=self.config.model_name, usage=usage)
         return response
+
+    def _create_gemini_content_parts(self, message: Any) -> List[Part]:
+        """
+        Create a Gemini content part from text, thought, and thought_signature.
+        """
+        text_content = message["content"]
+        thought = message["thought"]
+        thought_signature = message["thought_signature"]
+        all_parts = []
+        for j_idx, text in enumerate(text_content):
+            if thought[j_idx]:
+                all_parts.append(Part(text=text, thought=True))
+            elif thought_signature[j_idx] is not None:
+                decoded_sig = base64.b64decode(
+                    thought_signature[j_idx].encode("ascii")
+                )
+                all_parts.append(Part(text=text, thought_signature=decoded_sig))
+            else:
+                all_parts.append(Part(text=text))
+        return all_parts
+
+    def _create_gemini_style_messages(self, openai_messages: List[dict]) -> List[dict]:
+        """
+        Create Gemini-style messages from OpenAI-style messages.
+        """
+        gemini_messages = []
+        system_message = ""
+        i = 0
+        while i < len(openai_messages):
+            message = openai_messages[i]
+            if message["role"] == "system":
+                system_message += message["content"]
+                i += 1
+            elif message["role"] == "user":
+                gemini_messages.append(Content(
+                    role="user",
+                    parts=[
+                        Part(text=message["content"]),
+                    ],
+                ))
+                i += 1
+            elif message["role"] == "assistant":
+                if not message.get("tool_calls"):
+                    parts = self._create_gemini_content_parts(message)
+                    gemini_messages.append(Content(role="model", parts=parts))
+                else:
+                    all_parts = []
+                    if message.get("content"):
+                        all_parts.extend(self._create_gemini_content_parts(message))
+                    if message.get("tool_calls"):
+                        tool_calls = message.get("tool_calls")
+                        for tool_call in tool_calls:
+                            function_call_part = FunctionCall(
+                                    name=tool_call["function"]["name"],
+                                    args=json.loads(tool_call["function"]["arguments"]),
+                            )
+                            if tool_call.get("thought_signature"):
+                                ts_decoded = base64.b64decode(
+                                    tool_call["thought_signature"].encode(
+                                        "ascii"
+                                    )
+                                )
+                                all_parts.append(
+                                    Part(
+                                        function_call=function_call_part,
+                                        thought_signature=ts_decoded,
+                                    )
+                                )
+                            else:
+                                all_parts.append(Part(function_call=function_call_part))
+                    gemini_messages.append(Content(role="model", parts=all_parts))
+                i += 1
+            elif message["role"] == "tool":
+                # Collect all consecutive tool messages into the same Content object
+                tool_parts = []
+                while i < len(openai_messages) and openai_messages[i]["role"] == "tool":
+                    tool_message = openai_messages[i]
+                    try:
+                        tool_result = json.loads(tool_message["content"])
+                    except (ValueError, json.JSONDecodeError):
+                        tool_result = {"result": tool_message["content"]}
+                    tool_parts.append(Part.from_function_response(
+                        name=tool_message["tool_name"],
+                        response=tool_result
+                    ))
+                    i += 1
+                gemini_messages.append(Content(role="tool", parts=tool_parts))
+        return system_message, gemini_messages
 
     def support_tool_call(self) -> bool:
         """

@@ -6,9 +6,13 @@ implementing various LLM models. It includes abstract methods and utility
 functions for generating content, handling messages, and managing configurations.
 """
 # pylint: disable=unused-argument,broad-exception-caught
-import asyncio
 from abc import abstractmethod
-from typing import Any, List, Dict
+import asyncio
+import copy
+import traceback
+from typing import Any, Dict, List
+
+from openai.types.responses import Response as OpenAIResponse
 from pydantic import BaseModel
 from mcpuniverse.common.misc import ComponentABCMeta, ExportConfigMixin
 from mcpuniverse.common.logger import get_logger
@@ -103,8 +107,19 @@ class BaseLLM(ExportConfigMixin, metaclass=ComponentABCMeta):
                 project_id=self.project_id))
             try:
                 response = self._generate(messages, **kwargs)
+                messages_dict = copy.deepcopy(messages)
                 # Handle different response types for tracing
-                if isinstance(response, BaseModel):
+                if hasattr(response, 'output') and isinstance(response, OpenAIResponse):
+                    # Handle OpenAI-style response objects
+                    response_data = response.model_dump()
+                    messages_dict_tmp = []
+                    for message in messages_dict:
+                        if not isinstance(message, dict):
+                            messages_dict_tmp.append(message.model_dump())
+                        else:
+                            messages_dict_tmp.append(message)
+                    messages_dict = messages_dict_tmp
+                elif isinstance(response, BaseModel):
                     response_data = response.model_dump(mode="json")
                 elif hasattr(response, 'choices') and hasattr(response, 'model'):
                     # Handle OpenAI-style response objects
@@ -117,7 +132,8 @@ class BaseLLM(ExportConfigMixin, metaclass=ComponentABCMeta):
                                     "tool_calls": getattr(choice.message, 'tool_calls', None)
                                 }
                             } for choice in response.choices
-                        ]
+                        ],
+                        "usage": getattr(response, 'usage', None)
                     }
                 else:
                     response_data = response
@@ -126,18 +142,19 @@ class BaseLLM(ExportConfigMixin, metaclass=ComponentABCMeta):
                     "type": "llm",
                     "class": self.__class__.__name__,
                     "config": self.config.to_dict(),
-                    "messages": messages,
+                    "messages": messages_dict,
                     "response": response_data,
                     "error": ""
                 })
             except Exception as e:
+                tb_str = ''.join(traceback.format_exception(type(e), e, e.__traceback__))
                 t.add({
                     "type": "llm",
                     "class": self.__class__.__name__,
                     "config": self.config.to_dict(),
-                    "messages": messages,
-                    "response": "",
-                    "error": str(e)
+                    "messages": messages_dict,
+                    "response": str(e) + "\n" + tb_str,
+                    "error": str(e) + "\n" + tb_str
                 })
                 send_message(callbacks, message=CallbackMessage(
                     source=self.id, type=MessageType.ERROR, data=str(e),
@@ -168,7 +185,10 @@ class BaseLLM(ExportConfigMixin, metaclass=ComponentABCMeta):
             }
         else:
             # Ensure callback_data is never None to avoid CallbackMessage validation errors
-            callback_data = response if response is not None else ""
+            if hasattr(response, 'output') and isinstance(response, OpenAIResponse):
+                callback_data = response.model_dump()
+            else:
+                callback_data = response if response is not None else ""
 
         send_message(callbacks, message=CallbackMessage(
             source=self.id, type=MessageType.RESPONSE,

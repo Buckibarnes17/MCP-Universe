@@ -11,6 +11,7 @@ from .openai_agent import OpenAIAgentModel
 from .openrouter import OpenRouterModel
 from .gemini import GeminiModel
 from .vllm_gptoss import VLLMLocalModel
+from .claude_wr import ClaudeWRModel
 
 __all__ = [
     "OpenAIModel",
@@ -19,6 +20,7 @@ __all__ = [
     "OllamaModel",
     "DeepSeekModel",
     "ClaudeGatewayModel",
+    "ClaudeWRModel",
     "GrokModel",
     "OpenAIAgentModel",
     "OpenRouterModel",

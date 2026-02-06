@@ -12,6 +12,76 @@ from jinja2 import Environment
 from mcp.types import Tool
 
 
+SUMMARIZE_PROMPT = (
+    "***Important: You have reached the maximum number of interaction turns. "
+    "Therefore, you have to output the final answer with the specified format "
+    "without calling any tools in the final response.***"
+)
+
+
+def get_fc_cnt_list(scheduler_mode: dict) -> List[int]:
+    """
+    Given a scheduler_mode dict where keys are iteration indices and values are counts,
+    return a list whose length matches the highest iteration,
+    with each segment filled according to the provided count.
+
+    Example:
+        {25: 3, 50: 2, 100: 1}
+        -> [3]*25 + [2]*25 + [1]*50  (total length = 100)
+    """
+    # Sort scheduler_mode keys in ascending order
+    # filter the keys that can be converted to int
+    sorted_iters = sorted(k for k in scheduler_mode.keys() if isinstance(k, int))
+    fc_cnt_list = []
+    prev_iter = 0
+    for _idx, iter_num in enumerate(sorted_iters):
+        count = scheduler_mode[iter_num]
+        span = iter_num - prev_iter
+        fc_cnt_list.extend([count] * span)
+        prev_iter = iter_num
+    return fc_cnt_list
+
+
+def get_iteration_prompt_content(
+    iter_num: int,
+    max_iterations: int,
+    scheduler_mode: Optional[Dict],
+) -> Optional[str]:
+    """
+    Return the user prompt for this iteration: summarize on last step,
+    or countdown + optional scheduler hint when not last.
+    Returns None when nothing should be appended.
+    """
+    is_last_iter = iter_num == max_iterations - 1
+    steps_remaining = max_iterations - iter_num
+    countdown = f"You have {steps_remaining} steps remaining. Please continue."
+
+    result: Optional[str] = None
+    if is_last_iter:
+        result = SUMMARIZE_PROMPT
+    elif scheduler_mode:
+        if "dynamic" in scheduler_mode:
+            dynamic_prompt = scheduler_mode["dynamic"]
+            result = f"{countdown} {dynamic_prompt}"
+        else:
+            fc_cnt_list = get_fc_cnt_list(scheduler_mode)
+            fc_cnt_this_iter = fc_cnt_list[iter_num]
+            if fc_cnt_this_iter == 1:
+                result = (
+                    f"{countdown} At next step, if you need to make function calls, "
+                    f"you MUST make exactly {fc_cnt_this_iter} function calls in a single response."
+                )
+            else:
+                result = (
+                    f"{countdown} At next step, if you need to make function calls, "
+                    f"you MUST make at least {fc_cnt_this_iter} but not more than {fc_cnt_this_iter + 1} "
+                    "function calls in a single response to gather information extensively."
+                )
+    elif iter_num > 0:
+        result = countdown
+    return result
+
+
 def get_tools_description(tools: Dict[str, List[Tool]]) -> str:
     """
     Generate a formatted description of the specified tools.

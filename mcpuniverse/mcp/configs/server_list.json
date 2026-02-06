@@ -336,5 +336,43 @@
         "https://mcp.paypal.com/sse"
       ]
     }
+  },
+
+  "serper-search": {
+    "stdio": {
+      "command": "python3",
+      "args": [
+        "-m", "mcpuniverse.mcp.servers.serper_search"
+      ]
+    },
+    "env": {
+      "SERPER_API_KEY": "{{SERPER_API_KEY}}",
+      "SERPER_BASE_URL": "{{SERPER_BASE_URL}}"
+    }
+  },
+  
+  "jina-scrape-llm-summary": {
+    "stdio": {
+      "command": "python3",
+      "args": [
+        "-m", "mcpuniverse.mcp.servers.jina_scrape_llm_summary"
+      ]
+    },
+    "env": {
+      "JINA_API_KEY": "{{JINA_API_KEY}}",
+      "JINA_BASE_URL": "{{JINA_BASE_URL}}",
+      "SUMMARY_LLM_BASE_URL": "{{SUMMARY_LLM_BASE_URL}}",
+      "SUMMARY_LLM_MODEL_NAME": "{{SUMMARY_LLM_MODEL_NAME}}",
+      "SUMMARY_LLM_API_KEY": "{{SUMMARY_LLM_API_KEY}}"
+    }
+  },
+
+  "python-code-sandbox": {
+    "stdio": {
+      "command": "python3",
+      "args": [
+        "-m", "mcpuniverse.mcp.servers.python_code_sandbox"
+      ]
+    }
   }
 }

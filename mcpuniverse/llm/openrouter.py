@@ -40,7 +40,8 @@ model_name_map = {
     "Gemini3ProPreview_OR": "google/gemini-3-pro-preview",
     "Grok4_1Fast_Thinking_OR": "x-ai/grok-4.1-fast",
     "GPT5_1_Medium_OR": "openai/gpt-5.1",
-    "GPT5_Medium_OR": "openai/gpt-5"
+    "GPT5_Medium_OR": "openai/gpt-5",
+    "DeepSeekV3_2_OR": "deepseek/deepseek-v3.2"
 }
 
 @dataclass
@@ -58,6 +59,7 @@ class OpenRouterConfig(BaseConfig):
         max_completion_tokens (int): Maximum number of tokens in the completion (default: 2048).
         seed (int): Random seed for reproducibility (default: 12345).
         reasoning (str): Reasoning level (default: "high").
+        parallel_tool_calls (bool): Whether to enable parallel tool calls (default: True).
     """
     model_name: str = "GPT5_1_OR"
     api_key: str = os.getenv("OPENROUTER_API_KEY", "")
@@ -68,6 +70,7 @@ class OpenRouterConfig(BaseConfig):
     max_completion_tokens: int = 20000
     seed: int = 12345
     reasoning: str = "high"
+    parallel_tool_calls: bool = True
 
 
 class OpenRouterModel(BaseLLM):
@@ -199,6 +202,7 @@ class OpenRouterModel(BaseLLM):
                     "presence_penalty": self.config.presence_penalty,
                     "seed": self.config.seed,
                     "max_completion_tokens": self.config.max_completion_tokens,
+                    "parallel_tool_calls": self.config.parallel_tool_calls,
                 }
 
                 # Merge call_kwargs into common_params
@@ -210,7 +214,8 @@ class OpenRouterModel(BaseLLM):
                 if self.config.model_name in [
                     "Grok4_1Fast_Thinking_OR",
                     "GPT5_1_OR",
-                    "GPT5_Medium_OR"
+                    "GPT5_Medium_OR",
+                    "DeepSeekV3_2_OR"
                 ]:
                     common_params.setdefault("extra_body", {})["reasoning"] = {
                         "enabled": True
