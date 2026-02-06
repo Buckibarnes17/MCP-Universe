@@ -42,7 +42,7 @@ from mcpuniverse.callbacks.base import (
     send_message
 )
 
-from mcpevolve.application.builder import WorkflowBuilderWithWrapper
+from mcpuniverse.extensions.mcpplus.benchmark.builder import WorkflowBuilderWithWrapper
 
 
 class BenchmarkRunnerWithWrapper(BaseBenchmarkRunner):
@@ -110,16 +110,6 @@ class BenchmarkRunnerWithWrapper(BaseBenchmarkRunner):
         if trace_collector and hasattr(workflow._mcp_manager, '__dict__'):
             workflow._mcp_manager._trace_collector = trace_collector
             self._logger.info("Set trace collector on MCP manager for post-processor tracing")
-
-        # Set failure logger if provided and mcp_manager supports it
-        if failure_logger and hasattr(workflow._mcp_manager, 'set_failure_logger'):
-            self._logger.info("Setting failure logger on wrapper manager")
-            workflow._mcp_manager.set_failure_logger(failure_logger)
-            self._logger.info("Failure logger enabled for postprocessor")
-        else:
-            self._logger.warning("Failure logger NOT set: failure_logger=%s, has_method=%s",
-                               failure_logger is not None,
-                               hasattr(workflow._mcp_manager, 'set_failure_logger') if hasattr(workflow, '_mcp_manager') else False)
 
         store = BenchmarkResultStore(folder=store_folder)
 
@@ -265,24 +255,6 @@ class BenchmarkRunnerWithWrapper(BaseBenchmarkRunner):
                         "total_input_cost": trace_metrics.total_input_cost,
                         "total_output_cost": trace_metrics.total_output_cost,
                         "total_cost": trace_metrics.total_cost,
-
-                        # Legacy fields for backward compatibility (deprecated)
-                        "original_chars": 0,
-                        "filtered_chars": 0,
-                        "chars_reduced": 0,
-                        "original_tokens": 0,
-                        "filtered_tokens": 0,
-                        "tokens_reduced": 0,
-
-                        # Extraction method tracking (for react_extract_postprocess)
-                        "postprocessor_direct_extractions": trace_metrics.postprocessor_direct_extractions,
-                        "postprocessor_code_generations": trace_metrics.postprocessor_code_generations,
-
-                        # Output usage tracking (for react_dual_postprocess)
-                        "output_used_both": trace_metrics.output_used_both,
-                        "output_used_direct_only": trace_metrics.output_used_direct_only,
-                        "output_used_code_only": trace_metrics.output_used_code_only,
-                        "output_used_original": trace_metrics.output_used_original,
                     }
 
                     self._logger.info("Trace analysis complete: main_iterations=%d, pp_iterations=%d, total_cost=$%.4f",

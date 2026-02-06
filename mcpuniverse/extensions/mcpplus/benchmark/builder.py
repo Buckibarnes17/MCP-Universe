@@ -9,21 +9,19 @@ EXISTING (MCPUniverse WorkflowBuilder):
 THIS IMPLEMENTATION:
 - Extends to support 4th kind: wrapper (for PostProcessAgent config)
 - Pre-parses wrapper configs and builds MCPWrapperManager when enabled
-- Tracks agent-to-wrapper mappings and filters wrapper configs before passing to parent
-- Provides lookup methods to get wrapper config for specific agents
+- Filters wrapper configs before passing to parent
 """
 from typing import List, Literal, Dict, Any, Optional
 
-from pydantic import BaseModel, Field
-from mcpuniverse.workflows.builder import WorkflowBuilder as BaseWorkflowBuilder, WorkflowConfig as BaseWorkflowConfig
+from pydantic import BaseModel
+from mcpuniverse.workflows.builder import WorkflowBuilder as BaseWorkflowBuilder
 from mcpuniverse.mcp.manager import MCPManager
 from mcpuniverse.llm.base import BaseLLM
 from mcpuniverse.agent.base import Executor
 from mcpuniverse.common.context import Context
 from mcpuniverse.common.logger import get_logger
 
-from mcpevolve.mcp.wrapper_manager import MCPWrapperManager, WrapperConfig
-from mcpevolve.llm import TokenTrackingLLM
+from mcpuniverse.extensions.mcpplus.wrapper.wrapper_manager import MCPWrapperManager, WrapperConfig
 
 
 class WrapperSpec(BaseModel):
@@ -31,45 +29,19 @@ class WrapperSpec(BaseModel):
     Wrapper specification for post-processing.
 
     Attributes:
-        name (str): The unique name of the wrapper configuration.
         enabled (bool): Enable/disable wrapper functionality.
         token_threshold (int): Minimum token count to trigger post-processing.
-        use_agent_llm (bool): Use the same LLM as the main agent.
-        post_process_llm (Dict, optional): Separate LLM config for post-processor.
-        enable_memory (bool): Enable session memory for code reuse.
-        execution_timeout (int): Max seconds for filter code execution.
+        post_process_llm (Dict, optional): LLM config for post-processor. Defaults to gpt-5-mini.
+        execution_timeout (int): Max seconds for code execution.
         max_iterations (int): Maximum iterations for post-processor refinement.
-        post_processor_type (str): Type of post-processor agent:
-            - "extract": Direct extraction only (no code)
-            - "extract_and_code": Intelligently chooses direct extraction or code
-            - "code_only": Always generates code
-            - "dual": Generates both extraction AND code in one call (cost-optimized)
-            - "basic": Legacy single-shot code generation
-        enable_reflection (bool): Enable LLM-based reflection on output quality.
-        max_tool_output_chars (Optional[int]): Maximum characters of tool output to show to LLM.
-            If None or 0, shows entire output. Default is 2000.
-        expected_info_prompt_file (Optional[str]): Path to custom expected_info prompt file.
-        post_processor_prompt_file (Optional[str]): Path to custom prompt file for the post-processor agent.
-            If not provided, uses the agent's default built-in prompt. This is used for the main
-            extraction/code generation prompt (e.g., DUAL_EXTRACTION_PROMPT, COMBINED_EXTRACTION_PROMPT,
-            FILTER_CODE_GENERATION_PROMPT, DIRECT_EXTRACTION_PROMPT).
-        use_simple_prompt (bool): For "extract" type only - use simplified extraction prompt (True)
-            or ReAct-style prompt with JSON output (False). Default is True.
+        skip_iteration_on_size_failure (bool): Return original if both outputs too large.
     """
-    name: str
     enabled: bool = False
-    token_threshold: int = 500
-    use_agent_llm: bool = True
+    token_threshold: int = 2000
     post_process_llm: Optional[Dict] = None
-    enable_memory: bool = True
     execution_timeout: int = 10
     max_iterations: int = 3
-    post_processor_type: str = "react"
-    enable_reflection: bool = True
-    max_tool_output_chars: Optional[int] = 2000
-    expected_info_prompt_file: Optional[str] = None
-    post_processor_prompt_file: Optional[str] = None
-    use_simple_prompt: bool = True
+    skip_iteration_on_size_failure: bool = False
 
 
 class ExtendedWorkflowConfig(BaseModel):
@@ -110,22 +82,19 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
             context (Context, optional): Context information.
         """
         self._context = context if context else Context()
-        self._wrapper_configs: Dict[str, WrapperConfig] = {}
-        self._agent_wrapper_mapping: Dict[str, str] = {}
-        self._wrapper_llm_refs: Dict[str, str] = {}  # Track LLM references in wrapper configs
+        self._wrapper_config: Optional[WrapperConfig] = None
+        self._wrapper_llm_ref: Optional[str] = None
         self._logger = get_logger(self.__class__.__name__)
 
-        # Parse wrapper configs before initializing base class
-        self._parse_wrapper_configs(config)
+        # Parse wrapper config before initializing base class
+        self._parse_wrapper_config(config)
 
         # Determine which MCP manager to use
         if mcp_manager is None:
-            if self._wrapper_configs:
+            if self._wrapper_config:
                 # Use MCPWrapperManager if wrapper is configured
-                # We'll use the first wrapper config as default
-                default_wrapper = next(iter(self._wrapper_configs.values()))
                 mcp_manager = MCPWrapperManager(
-                    wrapper_config=default_wrapper,
+                    wrapper_config=self._wrapper_config,
                     context=self._context
                 )
             else:
@@ -140,9 +109,9 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
         # Initialize base class
         super().__init__(mcp_manager=mcp_manager, config=filtered_config)
 
-    def _parse_wrapper_configs(self, config: str | dict | List[dict]):
+    def _parse_wrapper_config(self, config: str | dict | List[dict]):
         """
-        Parse wrapper configurations from the config.
+        Parse wrapper configuration from the config.
 
         Args:
             config (str | dict | List[dict]): Configuration source.
@@ -163,36 +132,22 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
         else:
             configs = [ExtendedWorkflowConfig.model_validate(o) for o in config]
 
-        # Extract wrapper configs and agent-wrapper mappings
+        # Extract wrapper config (only one wrapper config supported)
         for conf in configs:
             if conf.kind == "wrapper":
                 wrapper_spec = WrapperSpec.model_validate(conf.spec)
-                self._wrapper_configs[wrapper_spec.name] = WrapperConfig(
+                self._wrapper_config = WrapperConfig(
                     enabled=wrapper_spec.enabled,
                     token_threshold=wrapper_spec.token_threshold,
-                    use_agent_llm=wrapper_spec.use_agent_llm,
                     post_process_llm=wrapper_spec.post_process_llm,
-                    enable_memory=wrapper_spec.enable_memory,
                     execution_timeout=wrapper_spec.execution_timeout,
                     max_iterations=wrapper_spec.max_iterations,
-                    post_processor_type=wrapper_spec.post_processor_type,
-                    enable_reflection=wrapper_spec.enable_reflection,
-                    max_tool_output_chars=wrapper_spec.max_tool_output_chars,
-                    expected_info_prompt_file=wrapper_spec.expected_info_prompt_file,
-                    post_processor_prompt_file=wrapper_spec.post_processor_prompt_file,
-                    use_simple_prompt=wrapper_spec.use_simple_prompt
+                    skip_iteration_on_size_failure=wrapper_spec.skip_iteration_on_size_failure
                 )
-                # Track LLM reference if post_process_llm is specified
-                if wrapper_spec.post_process_llm and 'llm' in wrapper_spec.post_process_llm:
-                    self._wrapper_llm_refs[wrapper_spec.name] = wrapper_spec.post_process_llm['llm']
-            elif conf.kind in ["agent", "workflow"]:
-                # Check if agent references a wrapper
-                spec_dict = conf.spec if isinstance(conf.spec, dict) else conf.spec.model_dump()
-                agent_name = spec_dict.get("name")
-                agent_config = spec_dict.get("config", {})
-                wrapper_ref = agent_config.get("wrapper")
-                if wrapper_ref:
-                    self._agent_wrapper_mapping[agent_name] = wrapper_ref
+                # Track LLM reference if post_process_llm is specified and is a dict with 'llm' key
+                if isinstance(wrapper_spec.post_process_llm, dict) and 'llm' in wrapper_spec.post_process_llm:
+                    self._wrapper_llm_ref = wrapper_spec.post_process_llm['llm']
+                break  # Only support one wrapper config
 
     def _filter_wrapper_configs(self, config: str | dict | List[dict]) -> str | dict | List[dict]:
         """
@@ -209,52 +164,13 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
             import yaml
             with open(config, "r", encoding="utf-8") as f:
                 objects = list(yaml.safe_load_all(f))
-            filtered = [obj for obj in objects if obj.get("kind") != "wrapper"]
-            # Also remove wrapper references from agent configs
-            for obj in filtered:
-                if obj.get("kind") in ["agent", "workflow"]:
-                    if "wrapper" in obj.get("spec", {}).get("config", {}):
-                        del obj["spec"]["config"]["wrapper"]
-            return filtered
+            return [obj for obj in objects if obj.get("kind") != "wrapper"]
         elif isinstance(config, dict):
             if config.get("kind") == "wrapper":
                 return []
             return config
         else:  # list
-            filtered = [obj for obj in config if obj.get("kind") != "wrapper"]
-            # Remove wrapper references
-            for obj in filtered:
-                if obj.get("kind") in ["agent", "workflow"]:
-                    if "wrapper" in obj.get("spec", {}).get("config", {}):
-                        del obj["spec"]["config"]["wrapper"]
-            return filtered
-
-    def get_wrapper_config(self, wrapper_name: str) -> Optional[WrapperConfig]:
-        """
-        Get a wrapper configuration by name.
-
-        Args:
-            wrapper_name (str): Name of the wrapper configuration.
-
-        Returns:
-            WrapperConfig if found, None otherwise.
-        """
-        return self._wrapper_configs.get(wrapper_name)
-
-    def get_agent_wrapper(self, agent_name: str) -> Optional[WrapperConfig]:
-        """
-        Get the wrapper configuration for an agent.
-
-        Args:
-            agent_name (str): Name of the agent.
-
-        Returns:
-            WrapperConfig if agent has a wrapper, None otherwise.
-        """
-        wrapper_name = self._agent_wrapper_mapping.get(agent_name)
-        if wrapper_name:
-            return self._wrapper_configs.get(wrapper_name)
-        return None
+            return [obj for obj in config if obj.get("kind") != "wrapper"]
 
     def build(
             self,
@@ -262,13 +178,12 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
             project_id: Optional[str] = "local_test"
     ):
         """
-        Build the agent workflow with wrapper LLM resolution and token tracking.
+        Build the agent workflow with wrapper LLM resolution.
 
         This method extends the parent build() to:
         1. Build all components normally
-        2. Wrap all LLMs with token tracking
-        3. Resolve LLM references in wrapper configs
-        4. Set the LLM on MCPWrapperManager if needed
+        2. Resolve LLM references in wrapper config
+        3. Set the LLM on MCPWrapperManager if needed
 
         Args:
             components (Dict, optional): Pre-built components to use.
@@ -277,43 +192,12 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
         # Call parent build
         super().build(components=components, project_id=project_id)
 
-        # Wrap all LLMs with token tracking
-        # TokenTrackingLLM will read timeout from MCPEVOLVE_LLM_TIMEOUT env var or default to 120
-        if hasattr(self, '_components') and self._components:
-            for name, component in list(self._components.items()):
-                if isinstance(component, BaseLLM) and not isinstance(component, TokenTrackingLLM):
-                    wrapped_llm = TokenTrackingLLM(component)
-                    self._components[name] = wrapped_llm
-                    self._logger.info("Wrapped LLM '%s' with token tracking (timeout: %ds)",
-                                      name, wrapped_llm._default_timeout)
-
-        # Resolve wrapper LLM references if MCPWrapperManager is used
-        # EXISTING: WorkflowBuilder doesn't know about wrappers
-        # THIS IMPLEMENTATION:
-        #   - If use_agent_llm=False: Set the post-processor LLM from post_process_llm.llm reference
-        #   - If use_agent_llm=True: Don't set here, agent will set its own LLM later
-        if isinstance(self._mcp_manager, MCPWrapperManager):
-            for wrapper_name, llm_ref in self._wrapper_llm_refs.items():
-                wrapper_config = self._wrapper_configs.get(wrapper_name)
-                if wrapper_config and not wrapper_config.use_agent_llm:
-                    # Only set if using separate post-processor LLM
-                    if llm_ref in self._name2object:
-                        llm = self._name2object[llm_ref]
-                        self._mcp_manager.set_llm(llm)
-                        self._logger.info(
-                            "Set separate post-processor LLM '%s' for wrapper '%s'",
-                            llm_ref, wrapper_name
-                        )
-                        break  # Only need to set once for the manager
-
-    def update_mcp_manager_wrapper(self, agent_name: str):
-        """
-        Update the MCP manager's wrapper configuration for a specific agent.
-
-        Args:
-            agent_name (str): Name of the agent to update wrapper for.
-        """
-        if isinstance(self._mcp_manager, MCPWrapperManager):
-            wrapper_config = self.get_agent_wrapper(agent_name)
-            if wrapper_config:
-                self._mcp_manager.update_wrapper_config(wrapper_config)
+        # Resolve wrapper LLM reference if MCPWrapperManager is used
+        if isinstance(self._mcp_manager, MCPWrapperManager) and self._wrapper_llm_ref:
+            if self._wrapper_llm_ref in self._name2object:
+                llm = self._name2object[self._wrapper_llm_ref]
+                self._mcp_manager.set_llm(llm)
+                self._logger.info(
+                    "Set post-processor LLM '%s' for wrapper",
+                    self._wrapper_llm_ref
+                )
