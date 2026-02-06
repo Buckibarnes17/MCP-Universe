@@ -229,11 +229,7 @@ class ProxyServer:
             # Safety: if expected_info still missing, provide a default to trigger wrapper
             lines.append("    if 'expected_info' not in args:")
             lines.append("        args['expected_info'] = 'All information is needed; summarize concisely.'")
-            # Create progress callback that wraps ctx.report_progress
-            lines.append("    async def progress_callback(progress, total=None, message=None):")
-            lines.append("        if hasattr(ctx, 'report_progress'):")
-            lines.append("            await ctx.report_progress(progress, total, message)")
-            lines.append(f"    return await client.execute_tool(tool_name='{tool_name}', arguments=args, progress_callback=progress_callback)")
+            lines.append(f"    return await client.execute_tool(tool_name='{tool_name}', arguments=args)")
 
             fn_src = "\n".join(lines)
             local_vars: dict[str, Any] = {}
