@@ -121,7 +121,7 @@ client = await manager.build_client("server")  # Same API!
 WrapperConfig(
     enabled: bool = False,                      # Enable wrapper
     token_threshold: int = 2000,                # Min tokens to trigger processing
-    post_process_llm: Optional[Dict] = None,    # Separate LLM for post-processing
+    post_process_llm: Dict = gpt-5-mini,       # LLM for post-processing (defaults to gpt-5-mini)
     execution_timeout: int = 10,                # Code execution timeout (seconds)
     max_iterations: int = 3,                    # Max refinement iterations
     skip_iteration_on_size_failure: bool = False  # Return original if both outputs too large
@@ -453,7 +453,7 @@ A: Yes! MCPPlus wraps the MCP client layer, so it works with any MCP server rega
 A: MCPPlus always falls back to the original tool output. Your agent never receives an error due to post-processing failure.
 
 **Q: Can I use a different LLM for post-processing?**
-A: Yes! Set `post_process_llm` in WrapperConfig to use a separate (potentially cheaper/faster) model for filtering.
+A: Yes! Post-processing defaults to `gpt-5-mini` for cost optimization. You can override this by setting `post_process_llm` in WrapperConfig to use a different model.
 
 **Q: How much does post-processing cost?**
 A: Each post-processing call uses ~1000-2000 tokens (prompt + response). However, if you save 10,000+ tokens on the main agent call, the net savings are substantial.

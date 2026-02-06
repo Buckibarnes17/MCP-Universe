@@ -1,9 +1,10 @@
 # Complete Benchmark Configuration with MCPPlus
 #
 # This configuration is identical to a standard MCP-Universe benchmark
-# except for the addition of:
-# 1. Post-processing LLM definition (llm-postprocess)
-# 2. Wrapper configuration block
+# except for the addition of the wrapper configuration block.
+#
+# The wrapper defaults to gpt-5-mini for post-processing, but this example
+# shows how to explicitly configure a custom LLM if desired.
 #
 # Everything else remains the same - no changes to agent instructions needed.
 
@@ -13,7 +14,7 @@ spec:
   name: llm-main
   type: openai
   config:
-    model_name: gpt-4o
+    model_name: gpt-5
 
 ---
 kind: llm
@@ -21,14 +22,14 @@ spec:
   name: llm-postprocess
   type: openai
   config:
-    model_name: gpt-4o-mini             # Cheaper LLM for post-processing
+    model_name: gpt-5-mini             # Explicitly set cheaper LLM for post-processing
 
 ---
 kind: wrapper
 spec:
   enabled: true
   token_threshold: 2000
-  post_process_llm: llm-postprocess
+  post_process_llm: llm-postprocess     # Optional: defaults to gpt-4o-mini if omitted
   max_iterations: 3
   execution_timeout: 10
   skip_iteration_on_size_failure: false

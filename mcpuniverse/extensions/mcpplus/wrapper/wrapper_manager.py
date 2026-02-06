@@ -27,7 +27,7 @@ class WrapperConfig:
     Attributes:
         enabled (bool): Enable/disable wrapper functionality.
         token_threshold (int): Minimum token count to trigger post-processing.
-        post_process_llm (Dict): Separate LLM config for post-processor.
+        post_process_llm (Dict): LLM config for post-processor. Defaults to gpt-5-mini for cost optimization.
         execution_timeout (int): Max seconds for filter code execution.
         max_iterations (int): Maximum iterations for post-processor to refine code on failures.
         skip_iteration_on_size_failure (bool): If True, immediately return original
@@ -36,10 +36,18 @@ class WrapperConfig:
     """
     enabled: bool = False
     token_threshold: int = 2000
-    post_process_llm: Optional[Dict] = None
+    post_process_llm: Dict = None
     execution_timeout: int = 10
     max_iterations: int = 3
     skip_iteration_on_size_failure: bool = False
+
+    def __post_init__(self):
+        """Set default post_process_llm if not provided."""
+        if self.post_process_llm is None:
+            self.post_process_llm = {
+                "type": "openai",
+                "model_name": "gpt-5-mini"
+            }
 
 
 class WrappedMCPClient(MCPClient):
@@ -94,9 +102,8 @@ class WrappedMCPClient(MCPClient):
             '2. WHY you need it (e.g., "to answer the user\'s question", "to visit in the next step", "to debug the issue")\n'
             '3. Any CONSTRAINTS (e.g., "only from the pricing section", "maximum 10 items", "published after 2023")\n'
             'Example good descriptions:\n'
-            '  - "The adult ticket price for Universal Studios from the pricing table, needed to answer the user\'s question about ticket cost"\n'
+            '  - "The adult ticket price for ABC Theatre from the pricing table, needed to answer the user\'s question about ticket cost"\n'
             '  - "URLs of all product links on the page, needed to visit each product page in subsequent steps"\n'
-            '  - "All information is needed because I need the complete page structure to locate the navigation menu"\n'
             'Example bad descriptions:\n'
             '  - "get information" (too vague)\n'
             '  - "price" (unclear which price, why needed, from where)\n'
@@ -207,8 +214,6 @@ class WrappedMCPClient(MCPClient):
                 tracer=tracer
             )
 
-            # EXISTING: Returned filtered_text directly (string)
-            # THIS IMPLEMENTATION: Wrap in CallToolResult to match expected format
             if filtered_text is None:
                 # Post-processor failed completely, return original
                 self._wrapper_logger.warning("Post-processor returned None, using original result")
@@ -259,7 +264,7 @@ class WrappedMCPClient(MCPClient):
         tracer=None
     ) -> str:
         """
-        Post-process tool output using the coding agent.
+        Post-process tool output using the extraction and coding agent.
 
         Args:
             tool_output: Raw tool output.
@@ -500,8 +505,7 @@ class MCPWrapperManager(MCPManager):
         transport: str = "stdio",
         timeout: int = 30,
         mcp_gateway_address: str = "",
-        permissions: Optional[List[Dict[str, str]]] = None,
-        agent_llm = None
+        permissions: Optional[List[Dict[str, str]]] = None
     ) -> MCPClient:
         """
         Build an MCP client with optional wrapping.
@@ -509,25 +513,16 @@ class MCPWrapperManager(MCPManager):
         If wrapper_config is provided and enabled, builds a wrapped client
         using build_wrapped_client. Otherwise, builds a standard client.
 
-        EXISTING: MCPManager.build_client() has permissions parameter
-        THIS IMPLEMENTATION: Adds agent_llm parameter to support use_agent_llm=True
-
         Args:
             server_name: Name of the MCP server to connect to.
             transport: Transport type ("stdio" or "sse").
             timeout: Connection timeout in seconds.
             mcp_gateway_address: MCP gateway server address (for SSE).
             permissions: Optional permissions for the client.
-            agent_llm: Optional LLM from agent (for use_agent_llm=True).
 
         Returns:
             MCPClient or WrappedMCPClient instance.
         """
-        # If agent_llm provided and we're using agent's LLM, set it now
-        if agent_llm is not None and self._wrapper_config and self._wrapper_config.use_agent_llm:
-            if self._llm is None:  # Only set if not already set
-                self.set_llm(agent_llm)
-
         # Check if wrapper is enabled
         if self._is_wrapper_enabled():
             return await self.build_wrapped_client(
