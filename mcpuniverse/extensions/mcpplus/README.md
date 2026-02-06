@@ -5,6 +5,68 @@
 [![MCP-Universe](https://img.shields.io/badge/MCP-Universe-blue)]()
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)]()
 
+## 🚀 Quick Start (CLI)
+
+**Prerequisites:** Python 3.10+, OpenAI API key (or any other LLM provider)
+
+```bash
+# Install MCP-Universe
+pip install mcpuniverse
+
+# Set your API key
+export OPENAI_API_KEY=sk-...
+
+# Wrap your existing MCP servers
+mcp-build-plus --mcp-config ~/.cursor/mcp.json
+
+# This creates -plus versions of all your MCP servers
+# (e.g., github → github-plus)
+```
+
+**Restart Cursor/Claude Code.** Your servers now have `-plus` versions with intelligent filtering.
+
+### CLI Options
+
+```bash
+# Wrap specific servers only
+mcp-build-plus --mcp-config ~/.cursor/mcp.json --servers github
+
+# Adjust token threshold (MCP+ invoked for responses beyond this length)
+mcp-build-plus --mcp-config ~/.cursor/mcp.json --token-threshold 300
+
+# Use a different/cheaper model (default: gpt-4.1)
+mcp-build-plus --mcp-config ~/.cursor/mcp.json --llm-model gpt-4.1-mini
+
+# Use Gemini instead of OpenAI
+mcp-build-plus --mcp-config ~/.cursor/mcp.json \
+    --llm-provider gemini \
+    --llm-model gemini-2.5-flash \
+    --llm-api-key-env GOOGLE_API_KEY
+
+# Use Anthropic instead of OpenAI
+mcp-build-plus --mcp-config ~/.cursor/mcp.json \
+    --llm-provider anthropic \
+    --llm-model claude-haiku-4-5-20251001 \
+    --llm-api-key-env ANTHROPIC_API_KEY
+
+# Preview changes without applying
+mcp-build-plus --mcp-config ~/.cursor/mcp.json --dry-run
+```
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--mcp-config` | Path to your mcp.json config file | Required |
+| `--servers` | Specific server names to wrap (space-separated) | All servers |
+| `--llm-provider` | LLM provider: openai, gemini, anthropic, etc. | `openai` |
+| `--llm-model` | LLM model for post-processing | `gpt-4.1` |
+| `--llm-api-key-env` | Environment variable name for API key | `OPENAI_API_KEY` |
+| `--token-threshold` | Min tokens to trigger post-processing | `500` |
+| `--output` | Path to write updated config | Overwrite input |
+| `--dry-run` | Preview changes without writing | - |
+| `-y, --yes` | Skip confirmation prompt | - |
+
+---
+
 ## 🎯 What is MCPPlus?
 
 MCPPlus is a post-processing extension for MCP-Universe that intelligently filters and compresses tool outputs before they reach your LLM, dramatically reducing token costs without sacrificing quality.
@@ -27,15 +89,9 @@ MCPPlus wraps your MCP clients and uses a **dual post-processing agent** to:
 
 ---
 
-## 🚀 Quick Start
+## 📖 Programmatic Usage
 
-### Installation
-
-```bash
-pip install mcpuniverse
-```
-
-### Basic Usage
+For integration into your own code:
 
 ```python
 from mcpuniverse.extensions.mcpplus.wrapper import MCPWrapperManager, WrapperConfig
@@ -210,7 +266,13 @@ result = await client.execute_tool(
 mcpuniverse/extensions/mcpplus/
 ├── agent/                          # Post-processing agent
 │   ├── __init__.py
-│   └── react_postprocess_agent.py # Dual extraction agent
+│   └── react_postprocess_agent.py  # Dual extraction agent
+├── mcp/                            # MCP server components
+│   ├── __init__.py
+│   └── proxy_server.py             # FastMCP proxy for standalone operation
+├── tools/                          # CLI tools
+│   ├── __init__.py
+│   └── wrap_mcp_config.py          # mcp-build-plus CLI tool
 ├── wrapper/                        # MCP client wrapper
 │   ├── __init__.py
 │   └── wrapper_manager.py          # Wrapper manager & client
