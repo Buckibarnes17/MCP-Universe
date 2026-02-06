@@ -12,7 +12,7 @@ Iteration only happens if:
 - Code execution fails
 """
 import json
-from typing import Any, Dict, Optional, Union, List, TYPE_CHECKING
+from typing import Any, Dict, Optional, Union, List
 from dataclasses import dataclass
 
 from mcpuniverse.agent.base import BaseAgent, BaseAgentConfig, AgentResponse
@@ -219,7 +219,7 @@ class PostProcessAgent(BaseAgent):
             success=bool(result and result.strip())
         )
 
-        # Encode stats as JSON in response (like other agents do)
+        # Encode stats as JSON in response 
         response_data = {
             "filtered_output": result,
             "stats": {
@@ -231,13 +231,6 @@ class PostProcessAgent(BaseAgent):
                 "filtered_tokens": postprocess_stats.filtered_tokens,
                 "tokens_reduced": postprocess_stats.tokens_reduced,
                 "success": postprocess_stats.success,
-                # Also include dual-specific stats for debugging
-                "direct_attempts": stats["direct_attempts"],
-                "code_attempts": stats["code_attempts"],
-                "output_used_both": stats.get("output_used_both", 0),
-                "output_used_direct_only": stats.get("output_used_direct_only", 0),
-                "output_used_code_only": stats.get("output_used_code_only", 0),
-                "output_used_original": stats.get("output_used_original", 0)
             }
         }
 
@@ -324,13 +317,8 @@ class PostProcessAgent(BaseAgent):
                 extraction_data = json.loads(response_text)
                 direct_extraction = extraction_data.get("direct_extraction", "")
                 code = extraction_data.get("code", "")
-                thought = extraction_data.get("thought", "")
 
-                # Log the thought if present
-                if thought:
-                    self._logger.info("Postprocessor thought: %s", thought)
-                else:
-                    self._logger.info("LLM response: %s", response[:200])
+                self._logger.info("LLM response: %s", response[:200])
 
             except json.JSONDecodeError as e:
                 self._logger.error("Invalid JSON from LLM: %s", str(e))
@@ -421,7 +409,6 @@ class PostProcessAgent(BaseAgent):
                             "(input: %d, max allowed: %d). skip_iteration_on_size_failure=True, returning original.",
                             direct_tokens, code_output_tokens, input_tokens, max_allowed_tokens
                         )
-                        stats["output_used_original"] = stats.get("output_used_original", 0) + 1
                         return tool_output
 
                     # Otherwise, retry if we have iterations left
@@ -438,30 +425,11 @@ class PostProcessAgent(BaseAgent):
                         )
                         continue
                     else:
-                        # Last iteration and both too large - compare total size vs original
                         self._logger.warning(
-                            "⚠️  Last iteration: both outputs too large (direct=%d, code=%d, max=%d). "
-                            "Comparing filtered vs original size...",
-                            direct_tokens, code_output_tokens, max_allowed_tokens
+                            "Filtered output (%d tokens) larger than original (%d tokens), returning original",
+                            filtered_total_tokens, input_tokens
                         )
-                        # Calculate what we'd return if we use filtered output
-                        filtered_output = self._format_output(direct_extraction, code_result, None)
-                        filtered_total_tokens = count_tokens(filtered_output, model=self._model_name)
-
-                        if filtered_total_tokens < input_tokens:
-                            self._logger.info(
-                                "Filtered output (%d tokens) smaller than original (%d tokens), using filtered",
-                                filtered_total_tokens, input_tokens
-                            )
-                            stats["output_used_direct_only"] = stats.get("output_used_direct_only", 0) + 1
-                            return filtered_output
-                        else:
-                            self._logger.warning(
-                                "Filtered output (%d tokens) larger than original (%d tokens), returning original",
-                                filtered_total_tokens, input_tokens
-                            )
-                            stats["output_used_original"] = stats.get("output_used_original", 0) + 1
-                            return tool_output
+                        return tool_output
 
                 # Determine which outputs to include based on size
                 use_direct = has_direct and not direct_too_large
@@ -485,26 +453,7 @@ class PostProcessAgent(BaseAgent):
                     if iteration < self._config.max_iterations - 1:
                         continue
                     else:
-                        stats["output_used_original"] = stats.get("output_used_original", 0) + 1
                         return tool_output
-
-                # Both methods succeeded and at least one passed size check
-                # Run reflection if enabled (only if not last iteration)
-                if self._config.enable_reflection and iteration < self._config.max_iterations - 1:
-                    should_retry, reflection_feedback = await self._should_retry_with_reflection(
-                        tool_output=tool_output,
-                        expected_info=expected_info,
-                        direct_result=direct_extraction if use_direct else "",
-                        generated_code=code,
-                        code_result=code_result if use_code else "",
-                        tracer=tracer
-                    )
-                    if should_retry:
-                        # Update iteration history with reflection feedback
-                        if reflection_feedback:
-                            iteration_history[-1]["error"] = reflection_feedback
-                        self._logger.info("Reflection suggests retry")
-                        continue
 
                 # Success! Return output (possibly excluding oversized parts)
                 final_direct = direct_extraction if use_direct else ""
@@ -512,13 +461,10 @@ class PostProcessAgent(BaseAgent):
 
                 if use_direct and use_code:
                     self._logger.info("✓ Both extraction methods succeeded and passed size check")
-                    stats["output_used_both"] = stats.get("output_used_both", 0) + 1
                 elif use_direct:
                     self._logger.info("✓ Direct extraction succeeded (code output excluded due to size)")
-                    stats["output_used_direct_only"] = stats.get("output_used_direct_only", 0) + 1
                 else:
                     self._logger.info("✓ Code extraction succeeded (direct extraction excluded due to size)")
-                    stats["output_used_code_only"] = stats.get("output_used_code_only", 0) + 1
 
                 return self._format_output(
                     direct_extraction=final_direct,
@@ -546,14 +492,6 @@ class PostProcessAgent(BaseAgent):
                 "yes" if best_code_result else "no"
             )
 
-            # Track which output(s) are being used
-            if best_direct_extraction and best_code_result:
-                stats["output_used_both"] = stats.get("output_used_both", 0) + 1
-            elif best_direct_extraction:
-                stats["output_used_direct_only"] = stats.get("output_used_direct_only", 0) + 1
-            elif best_code_result:
-                stats["output_used_code_only"] = stats.get("output_used_code_only", 0) + 1
-
             return self._format_output(
                 direct_extraction=best_direct_extraction,
                 code_result=best_code_result,
@@ -566,7 +504,6 @@ class PostProcessAgent(BaseAgent):
                 "Returning original tool output.",
                 self._config.max_iterations
             )
-            stats["output_used_original"] = stats.get("output_used_original", 0) + 1
             return tool_output
 
     def _build_prompt(
@@ -618,65 +555,6 @@ class PostProcessAgent(BaseAgent):
             iteration_instruction_section=iteration_instruction_section
         )
 
-    async def _should_retry_with_reflection(
-        self,
-        tool_output: str,
-        expected_info: str,
-        direct_result: str,
-        generated_code: str,
-        code_result: str,
-        tracer
-    ) -> tuple[bool, Optional[str]]:
-        """
-        Use LLM to evaluate if results are satisfactory.
-
-        Returns:
-            Tuple of (should_retry, feedback_message):
-            - should_retry: True if reflection suggests retry
-            - feedback_message: Combined feedback to include in iteration history
-        """
-        try:
-            reflection_prompt = REFLECTION_PROMPT.format(
-                expected_info=expected_info,
-                tool_output_preview=tool_output[:500],
-                direct_result=direct_result,
-                generated_code=generated_code,
-                code_result=code_result
-            )
-
-            response = await self._llm.generate_async(
-                messages=[{"role": "user", "content": reflection_prompt}],
-                tracer=tracer,
-                timeout=self._config.execution_timeout
-            )
-            reflection = json.loads(response)
-
-            success = reflection.get("success", False)
-            reasoning = reflection.get("reasoning", "")
-            code_feedback = reflection.get("code_feedback", "")
-            issue = reflection.get("issue", "")
-
-            self._logger.info("Reflection: success=%s, reasoning=%s", success, reasoning)
-            if code_feedback:
-                self._logger.info("Code feedback: %s", code_feedback)
-
-            # Build feedback message for iteration history
-            feedback_parts = []
-            if not success:
-                feedback_parts.append(f"Reflection failed: {reasoning}")
-                if issue:
-                    feedback_parts.append(f"Issue: {issue}")
-            if code_feedback:
-                feedback_parts.append(f"Code feedback: {code_feedback}")
-
-            feedback_message = " | ".join(feedback_parts) if feedback_parts else None
-
-            return not success, feedback_message
-
-        except Exception as e:
-            self._logger.error("Reflection failed: %s", str(e))
-            return False, None  # Don't retry on reflection error
-
     def _format_output(
         self,
         direct_extraction: str,
@@ -685,18 +563,18 @@ class PostProcessAgent(BaseAgent):
     ) -> str:
         """Format the final output with both results."""
         lines = []
-        lines.append("=" * 80)
+        lines.append("=" * 60)
         lines.append("DUAL EXTRACTION RESULTS")
-        lines.append("=" * 80)
+        lines.append("=" * 60)
         lines.append("")
         lines.append("Two extraction methods were used. You can use either result,")
         lines.append("or combine information from both as appropriate.")
         lines.append("")
 
         # Direct extraction
-        lines.append("-" * 80)
+        lines.append("-" * 60)
         lines.append("DIRECT EXTRACTION:")
-        lines.append("-" * 80)
+        lines.append("-" * 60)
         if direct_extraction:
             lines.append(direct_extraction)
         else:
@@ -704,9 +582,9 @@ class PostProcessAgent(BaseAgent):
         lines.append("")
 
         # Code-based extraction
-        lines.append("-" * 80)
+        lines.append("-" * 60)
         lines.append("CODE-BASED EXTRACTION:")
-        lines.append("-" * 80)
+        lines.append("-" * 60)
         if code_error:
             lines.append(f"ERROR: {code_error}")
         elif code_result:
@@ -715,6 +593,6 @@ class PostProcessAgent(BaseAgent):
             lines.append("(No output)")
         lines.append("")
 
-        lines.append("=" * 80)
+        lines.append("=" * 60)
 
         return "\n".join(lines)
