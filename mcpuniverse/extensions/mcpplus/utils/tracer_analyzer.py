@@ -11,7 +11,7 @@ from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from mcpuniverse.tracer.collectors.base import BaseCollector
 from mcpuniverse.common.logger import get_logger
-from mcpevolve.agent.react_postprocess import count_tokens
+from mcpuniverse.extensions.mcpplus.utils.stats import count_tokens
 
 
 @dataclass
@@ -54,16 +54,6 @@ class TaskMetrics:
     filtered_tokens: int = 0
     tokens_reduced: int = 0
 
-    # Extract post-processor extraction method tracking (for react_extract_postprocess)
-    postprocessor_direct_extractions: int = 0  # Number of times direct extraction was used
-    postprocessor_code_generations: int = 0    # Number of times code generation was used
-
-    # Output usage tracking (for react_dual_postprocess)
-    output_used_both: int = 0              # Both direct and code outputs used
-    output_used_direct_only: int = 0      # Only direct extraction output used
-    output_used_code_only: int = 0        # Only code execution output used
-    output_used_original: int = 0         # Original tool output returned (both methods failed)
-
 
 class TracerAnalyzer:
     """Analyze tracer logs to extract execution metrics."""
@@ -71,16 +61,13 @@ class TracerAnalyzer:
     # Model pricing (input/output per 1M tokens)
     MODEL_PRICING = {
         "gpt-4o": {"input": 2.5, "output": 10.0},
-        "gpt-4.1": {"input": 2.0, "output": 8.0},  # Assuming same as gpt-4o
-        "gpt-5": {"input": 1.25, "output": 10.0},  # GPT-5 pricing (update when official pricing available)
-        "gpt-5-mini": {"input": 0.25, "output": 2.0},  # GPT-5 mini pricing (cheaper variant)
-        # AWS Bedrock variants
+        "gpt-4.1": {"input": 2.0, "output": 8.0},  
+        "gpt-5": {"input": 1.25, "output": 10.0},  
+        "gpt-5-mini": {"input": 0.25, "output": 2.0},   
         "claude-sonnet-4": {"input": 3.0, "output": 15.0},
         "claude-sonnet-3.7": {"input": 3.0, "output": 15.0},
-        # Gemini
         "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
         "gemini-3-pro-preview": {"input": 2.0, "output": 12.0},
-        # OpenRouter GLM, most expensive provider
         "GLM4_6_OR": {"input": 0.55, "output": 2.19},
         # Add more as needed
     }
@@ -239,12 +226,6 @@ class TracerAnalyzer:
 
         # Analyze post-processor (if any)
         postprocessor_metrics = None
-        pp_direct_extractions = 0
-        pp_code_generations = 0
-        pp_output_used_both = 0
-        pp_output_used_direct_only = 0
-        pp_output_used_code_only = 0
-        pp_output_used_original = 0
 
         if postprocessor_records:
             pp_agent_name = "PostProcessAgent"  # Fixed name for postprocessor
@@ -253,31 +234,6 @@ class TracerAnalyzer:
                 agent_name=pp_agent_name,
                 is_postprocessor=True
             )
-
-            # Extract extraction method stats from postprocessor records
-            # Look for agent responses that contain stats
-            for record in postprocessor_records:
-                data = record.data if hasattr(record, 'data') else record
-                # Check for any postprocessor agent type
-                class_name = data.get('class', '')
-                is_postprocessor = (data.get('type') == 'agent' and
-                                  ('PostProcess' in class_name or 'Postprocess' in class_name))
-                if is_postprocessor:
-                    response = data.get('response', '')
-                    if response:
-                        try:
-                            # The response is JSON with stats
-                            import json
-                            response_data = json.loads(response)
-                            stats = response_data.get('stats', {})
-                            pp_direct_extractions += stats.get('direct_attempts', 0)
-                            pp_code_generations += stats.get('code_attempts', 0)
-                            pp_output_used_both += stats.get('output_used_both', 0)
-                            pp_output_used_direct_only += stats.get('output_used_direct_only', 0)
-                            pp_output_used_code_only += stats.get('output_used_code_only', 0)
-                            pp_output_used_original += stats.get('output_used_original', 0)
-                        except:
-                            pass
 
         # Calculate totals
         total_input = main_metrics.input_tokens
@@ -303,13 +259,7 @@ class TracerAnalyzer:
             total_input_cost=total_input_cost,
             total_output_cost=total_output_cost,
             total_cost=total_cost,
-            postprocessor_iterations=postprocessor_metrics.iterations if postprocessor_metrics else 0,
-            postprocessor_direct_extractions=pp_direct_extractions,
-            postprocessor_code_generations=pp_code_generations,
-            output_used_both=pp_output_used_both,
-            output_used_direct_only=pp_output_used_direct_only,
-            output_used_code_only=pp_output_used_code_only,
-            output_used_original=pp_output_used_original
+            postprocessor_iterations=postprocessor_metrics.iterations if postprocessor_metrics else 0
         )
 
     def _load_trace_records(self, trace_id: str) -> List[Dict[str, Any]]:

@@ -249,19 +249,17 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
 
                 for wrapper_config in self._wrapper_configs:
                     spec = wrapper_config.get('spec', {})
-                    f.write(f"**Wrapper Name:** {spec.get('name', 'unknown')}\n\n")
                     f.write(f"- **Enabled:** {spec.get('enabled', False)}\n")
-                    f.write(f"- **Token Threshold:** {spec.get('token_threshold', 5000)}\n")
-                    f.write(f"- **Use Agent LLM:** {spec.get('use_agent_llm', True)}\n")
+                    f.write(f"- **Token Threshold:** {spec.get('token_threshold', 2000)}\n")
 
-                    if not spec.get('use_agent_llm', True):
-                        post_llm = spec.get('post_process_llm', {})
-                        f.write(f"- **Post-processor LLM:** {post_llm.get('llm', 'unknown')}\n")
+                    post_llm = spec.get('post_process_llm', {})
+                    if isinstance(post_llm, dict):
+                        model_name = post_llm.get('model_name', 'gpt-5-mini')
+                        f.write(f"- **Post-processor LLM:** {model_name}\n")
 
                     f.write(f"- **Max Iterations:** {spec.get('max_iterations', 3)}\n")
-                    f.write(f"- **Post-processor Type:** {spec.get('post_processor_type', 'react')}\n")
-                    f.write(f"- **Enable Reflection:** {spec.get('enable_reflection', True)}\n")
-                    f.write(f"- **Execution Timeout:** {spec.get('execution_timeout', 10)}s\n\n")
+                    f.write(f"- **Execution Timeout:** {spec.get('execution_timeout', 10)}s\n")
+                    f.write(f"- **Skip Iteration on Size Failure:** {spec.get('skip_iteration_on_size_failure', False)}\n\n")
 
         except Exception:
             # Don't fail if we can't append wrapper info
@@ -371,12 +369,6 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
                     total_pp_out_cost = 0.0
                     total_main_iterations = 0
                     total_pp_iterations = 0
-                    total_pp_direct_extractions = 0
-                    total_pp_code_generations = 0
-                    total_output_used_both = 0
-                    total_output_used_direct_only = 0
-                    total_output_used_code_only = 0
-                    total_output_used_original = 0
 
                     # Task success tracking
                     tasks_fully_passed = 0
@@ -397,12 +389,6 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
                         total_pp_out_cost += stats.get("postprocessor_output_cost", 0.0)
                         total_main_iterations += stats.get("main_agent_iterations", 0)
                         total_pp_iterations += stats.get("postprocessor_iterations", 0)
-                        total_pp_direct_extractions += stats.get("postprocessor_direct_extractions", 0)
-                        total_pp_code_generations += stats.get("postprocessor_code_generations", 0)
-                        total_output_used_both += stats.get("output_used_both", 0)
-                        total_output_used_direct_only += stats.get("output_used_direct_only", 0)
-                        total_output_used_code_only += stats.get("output_used_code_only", 0)
-                        total_output_used_original += stats.get("output_used_original", 0)
 
                         # Track task success
                         eval_results = task_data.get("evaluation_results", [])
@@ -462,33 +448,6 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
                         f.write(f"- **Average Cost per Task:** ${(total_pp_in_cost + total_pp_out_cost) / task_count:.4f}\n")
                         f.write(f"- **Total Iterations:** {total_pp_iterations}\n")
                         f.write(f"- **Average Iterations per Task:** {total_pp_iterations / task_count if task_count > 0 else 0:.1f}\n")
-
-                        # Extraction method breakdown (for react_extract_postprocess agent)
-                        if total_pp_direct_extractions > 0 or total_pp_code_generations > 0:
-                            f.write(f"\n**Extraction Method Breakdown:**\n\n")
-                            total_extractions = total_pp_direct_extractions + total_pp_code_generations
-                            if total_extractions > 0:
-                                direct_pct = (total_pp_direct_extractions / total_extractions) * 100
-                                code_pct = (total_pp_code_generations / total_extractions) * 100
-                                f.write(f"- **Direct Extractions:** {total_pp_direct_extractions} ({direct_pct:.1f}%)\n")
-                                f.write(f"- **Code Generations:** {total_pp_code_generations} ({code_pct:.1f}%)\n")
-                                f.write(f"- **Total Extraction Attempts:** {total_extractions}\n")
-
-                        # Output usage breakdown (for react_dual_postprocess agent)
-                        total_output_usage = (total_output_used_both + total_output_used_direct_only +
-                                             total_output_used_code_only + total_output_used_original)
-                        if total_output_usage > 0:
-                            f.write(f"\n**Output Usage Breakdown:**\n\n")
-                            both_pct = (total_output_used_both / total_output_usage) * 100
-                            direct_pct = (total_output_used_direct_only / total_output_usage) * 100
-                            code_pct = (total_output_used_code_only / total_output_usage) * 100
-                            orig_pct = (total_output_used_original / total_output_usage) * 100
-                            f.write(f"- **Both Methods Used:** {total_output_used_both} ({both_pct:.1f}%)\n")
-                            f.write(f"- **Direct Only:** {total_output_used_direct_only} ({direct_pct:.1f}%)\n")
-                            f.write(f"- **Code Only:** {total_output_used_code_only} ({code_pct:.1f}%)\n")
-                            f.write(f"- **Original Output (Both Failed):** {total_output_used_original} ({orig_pct:.1f}%)\n")
-                            f.write(f"- **Total Tool Calls:** {total_output_usage}\n")
-
                         f.write("\n")
 
                     # Overall metrics
