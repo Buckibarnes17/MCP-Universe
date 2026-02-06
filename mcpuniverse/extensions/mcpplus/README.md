@@ -142,23 +142,6 @@ result = await client.execute_tool(
 )
 ```
 
-**Guidelines for `expected_info`:**
-1. **WHAT** - Specify exact data needed (e.g., "the adult ticket price", "list of URLs")
-2. **WHY** - Explain how you'll use it (e.g., "to answer user's question", "to visit in next step")
-3. **CONSTRAINTS** - Add limits (e.g., "maximum 10 items", "only from pricing section")
-
-**Examples:**
-
-✅ **Good:**
-- "The adult ticket price for Universal Studios from the pricing table, needed to answer the user's question about ticket cost"
-- "URLs of all product links on the page, needed to visit each product page in subsequent steps"
-- "All information is needed because I need the complete page structure to locate the navigation menu"
-
-❌ **Bad:**
-- "get information" (too vague)
-- "price" (unclear which price, why needed, from where)
-- "check the page" (not specific about what to extract)
-
 ---
 
 ## 🏗️ Architecture
@@ -411,13 +394,8 @@ Date: 2024-02-05
 
 ## 🤝 Contributing
 
-MCPPlus is part of MCP-Universe. Contributions welcome!
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+MCPPlus is part of MCP-Universe. Check
+[here](https://github.com/SalesforceAIResearch/MCP-Universe/blob/main/CONTRIBUTING.md).
 
 ---
 
@@ -435,24 +413,6 @@ MCPPlus is part of MCP-Universe. Contributions welcome!
 - [Research Paper](https://arxiv.org/abs/2508.14704)
 
 ---
-
-## 💡 Tips & Best Practices
-
-### Writing Good `expected_info`
-
-The quality of post-processing depends heavily on clear `expected_info` descriptions:
-
-**Structure your description:**
-1. Start with what you need: "Extract X"
-2. Add context: "from Y section"
-3. Explain purpose: "needed to Z"
-4. Add constraints: "maximum N items"
-
-**Example:**
-```
-"Extract the top 5 product names and prices from the search results table,
-needed to compare options and make a purchasing decision"
-```
 
 ### When to Use MCPPlus
 
@@ -497,7 +457,4 @@ A: Yes! Set `post_process_llm` in WrapperConfig to use a separate (potentially c
 
 **Q: How much does post-processing cost?**
 A: Each post-processing call uses ~1000-2000 tokens (prompt + response). However, if you save 10,000+ tokens on the main agent call, the net savings are substantial.
-
-**Q: Does it work with streaming responses?**
-A: Currently, MCPPlus processes complete tool outputs. Streaming support is planned for future releases.
 
