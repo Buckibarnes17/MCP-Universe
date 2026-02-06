@@ -236,11 +236,38 @@ class ProxyServer:
             exec(fn_src, {"client": self._client, "FastMCPContext": FastMCPContext}, local_vars)  # pylint: disable=exec-used
             tool_fn = local_vars["_tool"]
 
+            # Modify input schema to include expected_info parameter
+            modified_schema = dict(input_schema) if isinstance(input_schema, dict) else {}
+            if "properties" not in modified_schema:
+                modified_schema["properties"] = {}
+            if "required" not in modified_schema:
+                modified_schema["required"] = []
+            # Add expected_info to schema (using same description as PJ's WrappedMCPClient)
+            modified_schema["properties"]["expected_info"] = {
+                "type": "string",
+                "description": (
+                    'A precise description of what specific information you need from this tool call to accomplish your immediate goal. '
+                    'Be explicit about:\n'
+                    '1. WHAT data/information you need (e.g., "the adult ticket price", "list of product URLs", "error message text")\n'
+                    '2. WHY you need it (e.g., "to answer the user\'s question", "to visit in the next step", "to debug the issue")\n'
+                    '3. Any CONSTRAINTS (e.g., "only from the pricing section", "maximum 10 items", "published after 2023")\n'
+                    'Example good descriptions:\n'
+                    '  - "The adult ticket price for ABC Theatre from the pricing table, needed to answer the user\'s question about ticket cost"\n'
+                    '  - "URLs of all product links on the page, needed to visit each product page in subsequent steps"\n'
+                    'Example bad descriptions:\n'
+                    '  - "get information" (too vague)\n'
+                    '  - "price" (unclear which price, why needed, from where)\n'
+                    '  - "check the page" (not specific about what to extract)'
+                ),
+            }
+            if "expected_info" not in modified_schema["required"]:
+                modified_schema["required"].append("expected_info")
+
             self._server.add_tool(
                 fn=tool_fn,
                 name=tool_name,
                 description=tool_desc,
-                annotations=ToolAnnotations(input_schema=getattr(tool, "inputSchema", None)),
+                annotations=ToolAnnotations(input_schema=modified_schema),
             )
 
     async def run_async(self, transport: str = "stdio", port: int = 8000):
