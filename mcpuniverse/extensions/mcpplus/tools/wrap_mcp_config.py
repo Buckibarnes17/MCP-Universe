@@ -75,13 +75,10 @@ def _build_proxy_config(
         "wrapper": {
             "enabled": True,
             "token_threshold": token_threshold,
-            "use_agent_llm": False,
             "post_process_llm": None,
-            "enable_memory": True,
-            "execution_timeout": 500,
+            "execution_timeout": 10,
             "max_iterations": 3,
-            "enable_reflection": False,
-            "max_tool_output_chars": None,
+            "skip_iteration_on_size_failure": False,
         },
     }
 
