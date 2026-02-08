@@ -89,7 +89,7 @@ class GetReleasedProjectResponse(BaseModel):
 @router.post(
     "/project/create",
     response_model=CreateProjectResponse,
-    dependencies=[Depends(RateLimiter(rate=os.environ["FORMATTED_RATE_PROJECT"], identifier_type="uid"))]
+    dependencies=[Depends(RateLimiter(rate=os.getenv("FORMATTED_RATE_USER", "5-M"), identifier_type="uid"))]
 )
 async def create_project(
         request: CreateProjectRequest,
@@ -118,7 +118,7 @@ async def create_project(
 @router.get(
     "/project/get",
     response_model=GetProjectResponse,
-    dependencies=[Depends(RateLimiter(rate=os.environ["FORMATTED_RATE_PROJECT"], identifier_type="uid"))]
+    dependencies=[Depends(RateLimiter(rate=os.getenv("FORMATTED_RATE_USER", "5-M"), identifier_type="uid"))]
 )
 async def get_project(
         name: str,
@@ -148,7 +148,7 @@ async def get_project(
 
 @router.post(
     "/project/delete",
-    dependencies=[Depends(RateLimiter(rate=os.environ["FORMATTED_RATE_PROJECT"], identifier_type="uid"))]
+    dependencies=[Depends(RateLimiter(rate=os.getenv("FORMATTED_RATE_PROJECT", "5-M"), identifier_type="uid"))]
 )
 async def delete_project(
         name: str,
@@ -171,7 +171,7 @@ async def delete_project(
 @router.post(
     "/project/update",
     response_model=UpdateProjectResponse,
-    dependencies=[Depends(RateLimiter(rate=os.environ["FORMATTED_RATE_PROJECT"], identifier_type="uid"))]
+    dependencies=[Depends(RateLimiter(rate=os.getenv("FORMATTED_RATE_PROJECT", "5-M"), identifier_type="uid"))]
 )
 async def update_project(
         request: UpdateProjectRequest,
@@ -199,7 +199,7 @@ async def update_project(
 @router.post(
     "/project/list",
     response_model=ListProjectResponse,
-    dependencies=[Depends(RateLimiter(rate=os.environ["FORMATTED_RATE_PROJECT"], identifier_type="uid"))]
+    dependencies=[Depends(RateLimiter(rate=os.getenv("FORMATTED_RATE_PROJECT", "5-M"), identifier_type="uid"))]
 )
 async def list_project(
         request: ListProjectsRequest,
@@ -223,7 +223,7 @@ async def list_project(
 @router.post(
     "/project/create_release",
     response_model=CreateReleasedProjectResponse,
-    dependencies=[Depends(RateLimiter(rate=os.environ["FORMATTED_RATE_PROJECT"], identifier_type="uid"))]
+    dependencies=[Depends(RateLimiter(rate=os.getenv("FORMATTED_RATE_PROJECT", "5-M"), identifier_type="uid"))]
 )
 async def create_released_project(
         request: CreateReleasedProjectRequest,
@@ -261,7 +261,7 @@ async def create_released_project(
 @router.get(
     "/project/get_release",
     response_model=GetReleasedProjectResponse,
-    dependencies=[Depends(RateLimiter(rate=os.environ["FORMATTED_RATE_PROJECT"], identifier_type="uid"))]
+    dependencies=[Depends(RateLimiter(rate=os.getenv("FORMATTED_RATE_PROJECT", "5-M"), identifier_type="uid"))]
 )
 async def get_released_project(
         name: str,
