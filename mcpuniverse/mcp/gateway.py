@@ -1,6 +1,9 @@
 """
 The application gateway for MCP servers.
 Redesigned for high-concurrency RL training scenarios.
+
+TODO: Implement improved connection management. This version is not guaranteed to be stable
+without gateway restart or docker deployment for the high-concurrency usage.
 """
 # pylint: disable=broad-exception-caught,protected-access,no-value-for-parameter
 import asyncio
