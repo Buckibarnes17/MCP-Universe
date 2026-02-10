@@ -214,4 +214,4 @@ tests/mcp/logs
 tests/mcp/test_gateway_stress.sh
 tests/mcp/test_gateway_stress.py
 
-mcpuniverse/mcp/old_gateway.py
+mcpuniverse/mcp/env_pool

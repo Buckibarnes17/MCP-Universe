@@ -1,9 +1,6 @@
 """
 The application gateway for MCP servers.
 Redesigned for high-concurrency RL training scenarios.
-
-TODO: Implement improved connection management. This version is not guaranteed to be stable
-without gateway restart or docker deployment for the high-concurrency usage.
 """
 # pylint: disable=broad-exception-caught,protected-access,no-value-for-parameter
 import asyncio
@@ -22,7 +19,6 @@ from contextlib import closing, AsyncExitStack, asynccontextmanager
 from typing import List, Optional, Dict
 
 import anyio
-import aiohttp
 import click
 import uvicorn
 from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
@@ -50,6 +46,8 @@ class ServerConnector(metaclass=AutodocABCMeta):
         self._logger = get_logger(self.__class__.__name__)
         self._read_stream = None
         self._write_stream = None
+        self._last_activity: float = 0.0
+        self._idle_timed_out: bool = False
 
     async def cleanup(self):
         """Clean up client resources."""
@@ -168,6 +166,7 @@ class ServerConnector(metaclass=AutodocABCMeta):
                 self._write_stream,
             ):
                 async for message in read_stream:
+                    self._last_activity = time.monotonic()
                     await self._write_stream.send(message)
         except Exception as e:
             error_msg = str(e)
@@ -183,6 +182,7 @@ class ServerConnector(metaclass=AutodocABCMeta):
                 self._read_stream,
             ):
                 async for message in self._read_stream:
+                    self._last_activity = time.monotonic()
                     await write_stream.send(message)
         except Exception as e:
             error_msg = str(e)
@@ -190,16 +190,36 @@ class ServerConnector(metaclass=AutodocABCMeta):
                 self._logger.debug("Receive stream closed: %s", error_msg)
             raise
 
+    async def _idle_watchdog(self, tg: anyio.abc.TaskGroup, idle_timeout: float):
+        """Cancel the task group if no message activity for idle_timeout seconds."""
+        check_interval = min(30.0, idle_timeout / 2)
+        while True:
+            await anyio.sleep(check_interval)
+            elapsed = time.monotonic() - self._last_activity
+            if elapsed >= idle_timeout:
+                self._logger.info(
+                    "Connection idle for %.0f seconds (threshold: %.0f), closing",
+                    elapsed, idle_timeout
+                )
+                self._idle_timed_out = True
+                tg.cancel_scope.cancel()
+                return
+
     async def run(
             self,
             read_stream: MemoryObjectReceiveStream,
-            write_stream: MemoryObjectSendStream
+            write_stream: MemoryObjectSendStream,
+            idle_timeout: Optional[float] = None,
     ):
         """Redirect requests from read_stream to the MCP server and write responses to write_stream."""
+        self._last_activity = time.monotonic()
+        self._idle_timed_out = False
         try:
             async with anyio.create_task_group() as tg:
                 tg.start_soon(self._send, read_stream)
                 tg.start_soon(self._receive, write_stream)
+                if idle_timeout is not None:
+                    tg.start_soon(self._idle_watchdog, tg, idle_timeout)
         except Exception as e:
             # Check if it's a safe cleanup error
             if is_safe_cleanup_error(e):
@@ -215,6 +235,9 @@ class ServerConnector(metaclass=AutodocABCMeta):
                 if len(other_errors) == 1:
                     raise other_errors[0]
             raise
+
+        if self._idle_timed_out:
+            raise ConnectionError("Connection idle timeout")
 
 
 class Gateway(metaclass=AutodocABCMeta):
@@ -239,23 +262,43 @@ class Gateway(metaclass=AutodocABCMeta):
         mcp_manager: MCPManager,
         max_connections_per_server: int = 10000,  # High limit for high-concurrency training (soft limit with warnings)
         max_concurrent_requests: int = 200,  # limit concurrent requests
+        idle_timeout: Optional[float] = 300.0,  # 5 minutes, None to disable
     ):
         self._mcp_manager = mcp_manager
         self._server_configs = mcp_manager.get_configs()
         self._processes = {}
         self._cleanup_lock: asyncio.Lock = asyncio.Lock()
         self._logger = get_logger(self.__class__.__name__)
+        self._idle_timeout = idle_timeout
 
         # Connection pool management - track connection counts
         self._max_connections_per_server = max_connections_per_server
         self._active_connections: Dict[str, int] = defaultdict(int)
-        self._connection_lock: Dict[str, asyncio.Lock] = defaultdict(asyncio.Lock)
+        self._connection_lock: Dict[str, asyncio.Lock] = {}
+        self._connection_lock_init = asyncio.Lock()
 
         # Request queue management - limit concurrent requests
         self._max_concurrent_requests = max_concurrent_requests
-        self._request_semaphore: Dict[str, asyncio.Semaphore] = defaultdict(
-            lambda: asyncio.Semaphore(max_concurrent_requests)
-        )
+        self._request_semaphore: Dict[str, asyncio.Semaphore] = {}
+        self._semaphore_init_lock = asyncio.Lock()
+
+    async def _get_connection_lock(self, server_name: str) -> asyncio.Lock:
+        """Get or create an asyncio.Lock for the given server, using double-check locking."""
+        if server_name not in self._connection_lock:
+            async with self._connection_lock_init:
+                if server_name not in self._connection_lock:
+                    self._connection_lock[server_name] = asyncio.Lock()
+        return self._connection_lock[server_name]
+
+    async def _get_request_semaphore(self, server_name: str) -> asyncio.Semaphore:
+        """Get or create an asyncio.Semaphore for the given server, using double-check locking."""
+        if server_name not in self._request_semaphore:
+            async with self._semaphore_init_lock:
+                if server_name not in self._request_semaphore:
+                    self._request_semaphore[server_name] = asyncio.Semaphore(
+                        self._max_concurrent_requests
+                    )
+        return self._request_semaphore[server_name]
 
     def _terminate_process(self, name: str, process: multiprocessing.Process) -> None:
         """Terminate a single process safely."""
@@ -300,7 +343,12 @@ class Gateway(metaclass=AutodocABCMeta):
         self._active_connections.clear()
 
     def _find_available_port(self, start_port=10000, end_port=65535) -> int:
-        """Finds a free port number."""
+        """Finds a free port number.
+
+        Uses a linear scan instead of binding to port 0 (OS-assigned) so that
+        the gateway can avoid ports already claimed by other servers in the
+        same process and ensure deterministic, non-overlapping allocation.
+        """
         used_ports = set(p["port"] for _, p in self._processes.items() if "port" in p)
         for port in range(start_port, end_port + 1):
             if port in used_ports:
@@ -353,6 +401,9 @@ class Gateway(metaclass=AutodocABCMeta):
     def _wait_for_server_ready(self, server_name: str, port: int, timeout: float = 60.0) -> bool:
         """
         Wait for a server to be ready by checking if it's listening on the port.
+
+        Uses a synchronous socket connect_ex check, which is sufficient to determine
+        whether the server process has started accepting TCP connections.
         """
         start_time = time.time()
         check_interval = 0.5
@@ -369,43 +420,14 @@ class Gateway(metaclass=AutodocABCMeta):
                     )
                     return False
 
-            # Check port connectivity
+            # Check port connectivity via synchronous socket probe
             try:
                 with closing(socket.socket(socket.AF_INET, socket.SOCK_STREAM)) as s:
                     s.settimeout(1.0)
                     result = s.connect_ex(("localhost", port))
                     if result == 0:
-                        # Port is open, but also try HTTP check for SSE servers
-                        try:
-                            # Quick HTTP check
-                            async def check_http():
-                                try:
-                                    async with aiohttp.ClientSession() as session:
-                                        async with session.get(
-                                            f"http://localhost:{port}/sse",
-                                            timeout=aiohttp.ClientTimeout(total=2.0)
-                                        ) as response:
-                                            return response.status < 500
-                                except Exception:
-                                    return False
-
-                            # Run HTTP check synchronously
-                            loop = asyncio.get_event_loop()
-                            if loop.is_running():
-                                # If loop is running, just assume port check is enough
-                                self._logger.info("Server %s is ready on port %d", server_name, port)
-                                return True
-                            http_ok = loop.run_until_complete(check_http())
-                            if http_ok:
-                                self._logger.info(
-                                    "Server %s is ready on port %d (HTTP check passed)",
-                                    server_name, port
-                                )
-                                return True
-                        except Exception:
-                            # HTTP check failed, but port is open - assume ready
-                            self._logger.info("Server %s is ready on port %d (port check passed)", server_name, port)
-                            return True
+                        self._logger.info("Server %s is ready on port %d", server_name, port)
+                        return True
             except Exception:
                 pass
 
@@ -488,16 +510,24 @@ class Gateway(metaclass=AutodocABCMeta):
                 if "process" in p:
                     p["process"].join()
 
-    def _build_sse_routes(self, server_name: str) -> List:
-        """Builds Starlette routes for SSE transport."""
-        if server_name not in self._processes:
-            raise RuntimeError(f"Server {server_name} is not initialized.")
+    def _build_routes(self, server_name: str, connect_fn, pre_sse_connect=None, pre_sse_url=None) -> List:
+        """
+        Build Starlette routes with shared SSE transport, connection tracking,
+        and error handling logic.
+
+        Args:
+            server_name: Name of the server.
+            connect_fn: An async callable(connector) that establishes the upstream connection.
+            pre_sse_connect: If provided, an async callable(connector) executed *before*
+                entering the SSE context. Used by SSE transport to fail early.
+            pre_sse_url: URL logged on pre-SSE connect failure (SSE transport only).
+        """
         sse = SseServerTransport(f"/{server_name}/messages/")
 
         async def handle_sse(request):
             """Handle SSE connection requests."""
-            # Log connection count periodically
-            async with self._connection_lock[server_name]:
+            conn_lock = await self._get_connection_lock(server_name)
+            async with conn_lock:
                 current_count = self._active_connections[server_name]
                 if current_count >= self._max_connections_per_server:
                     self._logger.warning(
@@ -509,41 +539,46 @@ class Gateway(metaclass=AutodocABCMeta):
             connection_id = str(uuid.uuid4())[:8]
             connection_start_time = time.time()
 
-            async with self._request_semaphore[server_name]:
+            semaphore = await self._get_request_semaphore(server_name)
+            async with semaphore:
                 connector = ServerConnector()
                 connection_count_incremented = False
 
-                # First, establish connection to the MCP server before entering SSE context
-                # This ensures we fail early if the server is not reachable
-                try:
-                    await connector.connect_to_sse_server(self._processes[server_name]["url"])
-                except Exception as e:
-                    error_msg = str(e)
-                    self._logger.error(
-                        "Failed to connect to MCP server %s at %s: %s",
-                        server_name, self._processes[server_name]["url"], error_msg
-                    )
-                    # Return an error response instead of letting connect_sse fail
-                    return JSONResponse(
-                        status_code=503,
-                        content={"error": f"Failed to connect to MCP server: {error_msg}"}
-                    )
+                # Optional pre-SSE connect (used by SSE transport to fail early)
+                if pre_sse_connect is not None:
+                    try:
+                        await pre_sse_connect(connector)
+                    except Exception as e:
+                        error_msg = str(e)
+                        self._logger.error(
+                            "Failed to connect to MCP server %s at %s: %s",
+                            server_name, pre_sse_url or "unknown", error_msg
+                        )
+                        return JSONResponse(
+                            status_code=503,
+                            content={"error": f"Failed to connect to MCP server: {error_msg}"}
+                        )
 
                 try:
                     async with sse.connect_sse(
                             request.scope, request.receive, request._send
                     ) as streams:
                         # Increment connection count
-                        async with self._connection_lock[server_name]:
+                        conn_lock = await self._get_connection_lock(server_name)
+                        async with conn_lock:
                             self._active_connections[server_name] += 1
                             connection_count_incremented = True
 
                         try:
-                            await connector.run(streams[0], streams[1])
+                            await connect_fn(connector, streams)
                         except ConnectionError as ce:
                             self._logger.debug("SSE connection closed: %s", str(ce))
+                            # Idle timeout must propagate so sse.connect_sse()
+                            # exits with an exception instead of returning None
+                            # (which causes Starlette NoneType error).
+                            if connector._idle_timed_out:
+                                raise
                         except Exception as e:
-                            # Check if it's a safe error
                             if is_safe_cleanup_error(e):
                                 self._logger.debug("Safe error for %s: %s", server_name, str(e))
                             elif hasattr(e, 'exceptions') and isinstance(e.exceptions, tuple):
@@ -554,19 +589,17 @@ class Gateway(metaclass=AutodocABCMeta):
                             else:
                                 self._logger.warning("SSE error for %s: %s", server_name, e)
                 except Exception as e:
-                    # If connect_sse fails, we need to handle it gracefully
-                    error_msg = str(e)
-                    if is_safe_cleanup_error(e):
-                        self._logger.debug("Safe context error: %s", str(e))
+                    if is_safe_cleanup_error(e) or isinstance(e, ConnectionError):
+                        self._logger.debug("SSE connection ended for %s: %s", server_name, str(e))
                     else:
                         self._logger.warning("SSE context error for %s: %s", server_name, e)
-                    # Re-raise to let Starlette handle the response
                     raise
 
                 finally:
-                    # Decrement connection count
+                    # Decrement connection count only if it was incremented
                     if connection_count_incremented:
-                        async with self._connection_lock[server_name]:
+                        conn_lock = await self._get_connection_lock(server_name)
+                        async with conn_lock:
                             old_count = self._active_connections[server_name]
                             self._active_connections[server_name] = max(0, old_count - 1)
                             duration = time.time() - connection_start_time
@@ -588,60 +621,35 @@ class Gateway(metaclass=AutodocABCMeta):
         ]
         return routes
 
+    def _build_sse_routes(self, server_name: str) -> List:
+        """Builds Starlette routes for SSE transport."""
+        if server_name not in self._processes:
+            raise RuntimeError(f"Server {server_name} is not initialized.")
+        server_url = self._processes[server_name]["url"]
+        idle_timeout = self._idle_timeout
+
+        async def connect_fn(connector, streams):
+            await connector.run(streams[0], streams[1], idle_timeout=idle_timeout)
+
+        async def pre_sse_connect(connector):
+            await connector.connect_to_sse_server(server_url)
+
+        return self._build_routes(
+            server_name,
+            connect_fn=connect_fn,
+            pre_sse_connect=pre_sse_connect,
+            pre_sse_url=server_url,
+        )
+
     def _build_stdio_routes(self, server_name: str, config: ServerConfig) -> List:
         """Builds Starlette routes for Stdio transport."""
-        sse = SseServerTransport(f"/{server_name}/messages/")
+        idle_timeout = self._idle_timeout
 
-        async def handle_sse(request):
-            """Handle SSE connection requests for stdio servers."""
-            async with self._connection_lock[server_name]:
-                current_count = self._active_connections[server_name]
-                if current_count >= self._max_connections_per_server:
-                    self._logger.warning("High connection count for %s: %d", server_name, current_count)
-                elif current_count > 0 and current_count % 100 == 0:
-                    self._logger.info("Active connections for %s: %d", server_name, current_count)
-                self._active_connections[server_name] += 1
+        async def connect_fn(connector, streams):
+            await connector.connect_to_stdio_server(config)
+            await connector.run(streams[0], streams[1], idle_timeout=idle_timeout)
 
-            async with self._request_semaphore[server_name]:
-                connector = ServerConnector()
-                try:
-                    async with sse.connect_sse(
-                            request.scope, request.receive, request._send
-                    ) as streams:
-                        try:
-                            await connector.connect_to_stdio_server(config)
-                            await connector.run(streams[0], streams[1])
-                        except ConnectionError:
-                            self._logger.debug("SSE connection closed")
-                        except Exception as e:
-                            if is_safe_cleanup_error(e):
-                                self._logger.debug("Safe error: %s", str(e))
-                            elif hasattr(e, 'exceptions') and isinstance(e.exceptions, tuple):
-                                if all(is_safe_cleanup_error(exc) for exc in e.exceptions):
-                                    self._logger.debug("Safe ExceptionGroup")
-                                else:
-                                    self._logger.warning("SSE error for %s: %s", server_name, e)
-                            else:
-                                self._logger.warning("SSE error for %s: %s", server_name, e)
-                except Exception as e:
-                    if is_safe_cleanup_error(e):
-                        self._logger.debug("Safe context error: %s", str(e))
-                    else:
-                        self._logger.warning("SSE context error for %s: %s", server_name, e)
-                finally:
-                    async with self._connection_lock[server_name]:
-                        self._active_connections[server_name] = max(0, self._active_connections[server_name] - 1)
-                    try:
-                        await connector.cleanup()
-                    except Exception as e:
-                        if not is_safe_cleanup_error(e):
-                            self._logger.debug("Cleanup warning: %s", e)
-
-        routes = [
-            Route(f"/{server_name}/sse", endpoint=handle_sse),
-            Mount(f"/{server_name}/messages/", app=sse.handle_post_message),
-        ]
-        return routes
+        return self._build_routes(server_name, connect_fn=connect_fn)
 
     def build_starlette_app(
             self,
@@ -682,9 +690,9 @@ class Gateway(metaclass=AutodocABCMeta):
 def run_server(command, args):
     """
     Runs a shell command with improved error handling and logging.
-    
+
     This function runs in a separate process, so errors here will cause the process to exit.
-    Gateway monitors the process and will restart it if it dies.
+    The gateway does not currently implement automatic restart for failed server processes.
     """
     command = (
         shutil.which(command)
@@ -726,14 +734,19 @@ def run_server(command, args):
 @click.option("--config", default="", help="Server config file")
 @click.option("--mode", default="stdio", help="Launch MCP clients via 'stdio' or 'sse'")
 @click.option("--servers", default="", help="A list of servers to use")
-def main(port: int, config: str, mode: str, servers: str):
+@click.option("--max-connections", default=10000, help="Max connections per server (default: 10000)")
+@click.option("--max-concurrent-requests", default=200, help="Max concurrent requests per server (default: 200)")
+@click.option("--idle-timeout", default=300, type=float,
+              help="Idle timeout for SSE connections in seconds (default: 300, 0 to disable)")
+def main(port: int, config: str, mode: str, servers: str, max_connections: int, max_concurrent_requests: int,
+         idle_timeout: float):
     """Start the gateway server"""
     manager = MCPManager(config=config)
-    # Use high connection limits for high-concurrency training scenarios
     gateway = Gateway(
         mcp_manager=manager,
-        max_connections_per_server=20000, # High limit for high-concurrency training
-        max_concurrent_requests=20000, # Allow more concurrent requests
+        max_connections_per_server=max_connections,
+        max_concurrent_requests=max_concurrent_requests,
+        idle_timeout=idle_timeout if idle_timeout > 0 else None,
     )
     servers = [s.strip() for s in servers.split(",") if s.strip()]
     app = gateway.build_starlette_app(mode=mode, servers=servers)

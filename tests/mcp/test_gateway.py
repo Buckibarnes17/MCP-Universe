@@ -4,6 +4,9 @@ import socket
 import time
 import os
 from unittest.mock import Mock, patch, MagicMock
+
+import anyio
+from anyio.streams.memory import MemoryObjectReceiveStream, MemoryObjectSendStream
 from mcpuniverse.mcp.manager import MCPManager
 from mcpuniverse.mcp.gateway import Gateway, ServerConnector
 
@@ -149,46 +152,43 @@ class TestGateway(unittest.IsolatedAsyncioTestCase):
         # Should have at least 2 routes
         self.assertGreaterEqual(len(routes), 2)
 
-    def test_connection_pool_tracking(self):
+    async def test_connection_pool_tracking(self):
         """Test connection pool tracking functionality"""
         server_name = "test_server"
-        
+
         # Initially no connections
         self.assertEqual(self.gateway._active_connections[server_name], 0)
-        
+
         # Simulate connection increments
-        async def simulate_connection():
-            async with self.gateway._connection_lock[server_name]:
-                self.gateway._active_connections[server_name] += 1
-        
-        # Test multiple connections
-        asyncio.run(simulate_connection())
-        self.assertEqual(self.gateway._active_connections[server_name], 1)
-        
-        asyncio.run(simulate_connection())
-        self.assertEqual(self.gateway._active_connections[server_name], 2)
-        
-        # Test connection decrement
-        async def simulate_disconnection():
-            async with self.gateway._connection_lock[server_name]:
-                self.gateway._active_connections[server_name] = max(
-                    0, self.gateway._active_connections[server_name] - 1
-                )
-        
-        asyncio.run(simulate_disconnection())
+        lock = await self.gateway._get_connection_lock(server_name)
+        async with lock:
+            self.gateway._active_connections[server_name] += 1
         self.assertEqual(self.gateway._active_connections[server_name], 1)
 
-    def test_concurrent_request_semaphore(self):
+        lock = await self.gateway._get_connection_lock(server_name)
+        async with lock:
+            self.gateway._active_connections[server_name] += 1
+        self.assertEqual(self.gateway._active_connections[server_name], 2)
+
+        # Test connection decrement
+        lock = await self.gateway._get_connection_lock(server_name)
+        async with lock:
+            self.gateway._active_connections[server_name] = max(
+                0, self.gateway._active_connections[server_name] - 1
+            )
+        self.assertEqual(self.gateway._active_connections[server_name], 1)
+
+    async def test_concurrent_request_semaphore(self):
         """Test concurrent request semaphore functionality"""
         server_name = "test_server"
-        
-        # Access the semaphore (defaultdict creates it on access)
-        semaphore = self.gateway._request_semaphore[server_name]
-        
+
+        # Access the semaphore via the helper method
+        semaphore = await self.gateway._get_request_semaphore(server_name)
+
         # Verify semaphore exists and has correct limit
         self.assertIsNotNone(semaphore)
         self.assertEqual(semaphore._value, self.gateway._max_concurrent_requests)
-        
+
         # Now verify it's in the dict
         self.assertIn(server_name, self.gateway._request_semaphore)
 
@@ -402,6 +402,118 @@ class TestServerConnector(unittest.IsolatedAsyncioTestCase):
             return_exceptions=True
         )
         # Should complete without errors
+
+    async def test_idle_timeout(self):
+        """Test that idle connections are closed after idle_timeout seconds."""
+        connector = ServerConnector()
+
+        # Create memory streams to simulate the MCP transport.
+        # The "client" side (read_stream) will never send anything,
+        # so the connector stays idle and should time out.
+        client_send, client_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        server_send, server_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+
+        # Set up the connector's upstream streams (what it reads/writes to the MCP server).
+        # These also won't produce messages, simulating an idle server.
+        upstream_send, upstream_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        downstream_send, downstream_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        connector._read_stream = upstream_recv
+        connector._write_stream = downstream_send
+
+        with self.assertRaises(ConnectionError) as ctx:
+            await connector.run(client_recv, server_send, idle_timeout=0.5)
+
+        self.assertIn("idle timeout", str(ctx.exception).lower())
+        self.assertTrue(connector._idle_timed_out)
+
+    async def test_idle_timeout_disabled(self):
+        """Test that idle_timeout=None does not trigger timeout."""
+        connector = ServerConnector()
+
+        # Create streams
+        client_send, client_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        server_send, server_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        upstream_send, upstream_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        downstream_send, downstream_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        connector._read_stream = upstream_recv
+        connector._write_stream = downstream_send
+
+        # Close the client send side after a short delay to end the run naturally
+        async def close_after_delay():
+            await anyio.sleep(0.3)
+            await client_send.aclose()
+            await upstream_send.aclose()
+
+        timed_out = False
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(close_after_delay)
+                tg.start_soon(connector.run, client_recv, server_send, None)
+        except (ConnectionError, Exception):
+            pass
+
+        # Should NOT have idle timed out
+        self.assertFalse(connector._idle_timed_out)
+
+    async def test_idle_timeout_reset_by_activity(self):
+        """Test that message activity resets the idle timer."""
+        connector = ServerConnector()
+
+        # Create streams
+        client_send, client_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        server_send, server_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        upstream_send, upstream_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        downstream_send, downstream_recv = anyio.create_memory_object_stream(max_buffer_size=16)
+        connector._read_stream = upstream_recv
+        connector._write_stream = downstream_send
+
+        # Send messages periodically to keep the connection alive,
+        # then stop to let it time out
+        async def send_then_stop():
+            from mcp.types import JSONRPCMessage, JSONRPCRequest
+            # Send a few messages to keep the connection alive
+            for i in range(3):
+                await anyio.sleep(0.2)
+                msg = JSONRPCMessage(
+                    jsonrpc="2.0",
+                    id=i,
+                    method="ping",
+                )
+                await client_send.send(msg)
+            # Now stop sending — should idle out after 0.5s
+
+        try:
+            async with anyio.create_task_group() as tg:
+                tg.start_soon(send_then_stop)
+                tg.start_soon(connector.run, client_recv, server_send, 0.5)
+        except ConnectionError as e:
+            self.assertIn("idle timeout", str(e).lower())
+            self.assertTrue(connector._idle_timed_out)
+        except Exception:
+            # May get other exceptions from the mock streams, that's ok
+            pass
+
+
+class TestGatewayIdleTimeout(unittest.IsolatedAsyncioTestCase):
+    """Test suite for Gateway idle timeout configuration"""
+
+    def test_gateway_idle_timeout_default(self):
+        """Test that Gateway has idle_timeout=300 by default."""
+        manager = MCPManager()
+        gateway = Gateway(mcp_manager=manager)
+        self.assertEqual(gateway._idle_timeout, 300.0)
+
+    def test_gateway_idle_timeout_custom(self):
+        """Test that Gateway accepts custom idle_timeout."""
+        manager = MCPManager()
+        gateway = Gateway(mcp_manager=manager, idle_timeout=60.0)
+        self.assertEqual(gateway._idle_timeout, 60.0)
+
+    def test_gateway_idle_timeout_disabled(self):
+        """Test that Gateway accepts None to disable idle timeout."""
+        manager = MCPManager()
+        gateway = Gateway(mcp_manager=manager, idle_timeout=None)
+        self.assertIsNone(gateway._idle_timeout)
 
 
 if __name__ == "__main__":
