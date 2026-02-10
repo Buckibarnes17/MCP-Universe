@@ -89,6 +89,7 @@ def is_safe_cleanup_error(error: Exception) -> bool:
     - Cleanup happens in a different task than creation (Ray/async environments)
     - SSE connections are closed during context manager exit
     - Generators are stopped during cleanup
+    - Concurrent cleanup calls cancel each other
 
     Args:
         error: The exception to check.
@@ -96,6 +97,10 @@ def is_safe_cleanup_error(error: Exception) -> bool:
     Returns:
         True if the error is safe to ignore, False otherwise.
     """
+    # Handle CancelledError - common during concurrent cleanup
+    if isinstance(error, asyncio.CancelledError):
+        return True
+
     error_msg = str(error).lower()
     error_type = type(error).__name__
 
@@ -106,6 +111,9 @@ def is_safe_cleanup_error(error: Exception) -> bool:
         "different task",
         "asynchronous generator",
         "no running event loop",
+        "generator didn't stop",
+        "generator didn't yield",
+        "broken resource",
     ]
 
     # Check for pattern matches
@@ -165,30 +173,27 @@ async def _check_server_reachable(url: str, timeout: float = 5.0) -> bool:
     Check if the server URL is reachable before attempting SSE connection.
 
     Args:
-        url: Server URL to check
+        url: Server URL to check (should be the full SSE endpoint URL)
         timeout: Timeout for the check
 
     Returns:
         True if server is reachable, False otherwise
     """
     try:
-        # Extract base URL (remove /sse suffix if present)
-        base_url = url.rsplit('/sse', 1)[0] if '/sse' in url else url
-
         async with aiohttp.ClientSession() as session:
+            # Directly check the SSE endpoint URL
+            # For Gateway, the URL format is http://gateway:port/server_name/sse
+            # We should check the actual SSE endpoint, not a base URL
             try:
-                # Try to connect to the base URL (or a simple GET request)
-                async with session.get(base_url, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
-                    return response.status < 500  # Any response means server is reachable
+                async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
+                    # Accept 200 (OK) or other success status codes
+                    # 404 means route doesn't exist, which is a real error
+                    # But we'll be lenient and accept any non-5xx status
+                    return response.status < 500
             except (aiohttp.ClientError, asyncio.TimeoutError):
-                # Try connecting to the SSE endpoint directly
-                try:
-                    async with session.get(url, timeout=aiohttp.ClientTimeout(total=timeout)) as response:
-                        return True
-                except (aiohttp.ClientError, asyncio.TimeoutError):
-                    return False
+                return False
     except Exception:
-        # Any other error, assume server might be reachable
+        # Any other error, assume server might be reachable to avoid false negatives
         return True
 
 
@@ -232,12 +237,15 @@ async def safe_sse_client(
     )
 
     @asynccontextmanager
-    async def _controlled_factory(_headers=None, _timeout=None, _auth=None):
+    async def _controlled_factory(headers=None, timeout=None, auth=None, **kwargs):  # pylint: disable=unused-argument
         """Yield our pre-created httpx client. Does NOT close it on exit.
 
         sse_client's internal `async with httpx_client_factory(...) as client:` will
         use this factory. We intentionally skip closing here because we close the
         client ourselves in safe_sse_client's finally block (step 1 of cleanup).
+        
+        Note: We accept but ignore all parameters (headers, timeout, auth, etc.)
+        because we've already created the httpx client with our desired configuration.
         """
         yield _httpx_client
 
@@ -257,14 +265,15 @@ async def safe_sse_client(
         if is_safe_cleanup_error(e):
             if logger:
                 logger.debug("Safe error during SSE client entry: %s", str(e))
-        elif hasattr(e, 'exceptions') and isinstance(e.exceptions, tuple):
+            # Still need to yield None or raise to avoid "generator didn't yield"
+            raise
+        if hasattr(e, 'exceptions') and isinstance(e.exceptions, tuple):
             if all(is_safe_cleanup_error(exc) for exc in e.exceptions):
                 if logger:
                     logger.debug("ExceptionGroup with safe errors during SSE client entry")
-            else:
                 raise
-        else:
             raise
+        raise
     finally:
         # Step 1: Force-close the httpx client.
         # This immediately breaks the SSE HTTP stream, causing the background
@@ -810,36 +819,61 @@ class MCPClient(metaclass=AutodocABCMeta):
 
         Note: In RL training scenarios where Gateway restarts,
         explicit cleanup may not be necessary as all connections are closed on restart.
+        
+        This method is idempotent - multiple concurrent calls are safe due to the lock.
         """
-        async with self._cleanup_lock:
-            try:
-                self._logger.debug("Closing exit stack for client %s", self._name)
-                await self._exit_stack.aclose()
-                self._logger.debug("Exit stack closed for client %s", self._name)
-            except Exception as e:
-                # Check if this is a safe cleanup error
-                if is_safe_cleanup_error(e):
-                    self._logger.debug("Safe cleanup error for %s: %s", self._name, str(e))
-                elif hasattr(e, 'exceptions') and isinstance(e.exceptions, tuple):
-                    # Check if this is an ExceptionGroup with safe errors
-                    safe_errors = [exc for exc in e.exceptions if is_safe_cleanup_error(exc)]
-                    other_errors = [exc for exc in e.exceptions if not is_safe_cleanup_error(exc)]
-                    if other_errors:
-                        self._logger.error(
-                            "Cleanup errors for %s: %d error(s)",
-                            self._name, len(other_errors)
-                        )
+        # Check if already cleaned up (idempotent check before acquiring lock)
+        if self._session is None and len(self._exit_stack._exit_callbacks) == 0:  # pylint: disable=protected-access
+            return
+
+        try:
+            async with self._cleanup_lock:
+                # Double-check after acquiring lock (another cleanup might have completed)
+                if self._session is None and len(self._exit_stack._exit_callbacks) == 0:  # pylint: disable=protected-access
+                    return
+
+                try:
+                    self._logger.debug("Closing exit stack for client %s", self._name)
+                    await self._exit_stack.aclose()
+                    self._logger.debug("Exit stack closed for client %s", self._name)
+                except asyncio.CancelledError:
+                    # CancelledError is expected during concurrent cleanup
+                    # When multiple cleanups run concurrently, one may cancel the others
+                    # This is safe - the first cleanup will succeed, others will be cancelled
+                    self._logger.debug("Cleanup cancelled for %s (likely due to concurrent cleanup)", self._name)
+                    # Don't re-raise - allow the cleanup to complete gracefully
+                    # The session will still be cleared in the finally block
+                except Exception as e:
+                    # Check if this is a safe cleanup error
+                    if is_safe_cleanup_error(e):
+                        self._logger.debug("Safe cleanup error for %s: %s", self._name, str(e))
+                    elif hasattr(e, 'exceptions') and isinstance(e.exceptions, tuple):
+                        # Check if this is an ExceptionGroup with safe errors
+                        safe_errors = [exc for exc in e.exceptions if is_safe_cleanup_error(exc)]
+                        other_errors = [exc for exc in e.exceptions if not is_safe_cleanup_error(exc)]
+                        if other_errors:
+                            self._logger.error(
+                                "Cleanup errors for %s: %d error(s)",
+                                self._name, len(other_errors)
+                            )
+                        else:
+                            self._logger.debug(
+                                "Safe cleanup errors for %s: %d error(s)",
+                                self._name, len(safe_errors)
+                            )
                     else:
-                        self._logger.debug(
-                            "Safe cleanup errors for %s: %d error(s)",
-                            self._name, len(safe_errors)
-                        )
-                else:
-                    self._logger.error("Cleanup error for %s: %s", self._name, str(e))
-            finally:
-                # Always clear session state
-                self._session = None
-                self._stdio_context = None
+                        self._logger.error("Cleanup error for %s: %s", self._name, str(e))
+                finally:
+                    # Always clear session state, even if cleanup was cancelled or errored
+                    self._session = None
+                    self._stdio_context = None
+        except asyncio.CancelledError:
+            # If cancellation happens while acquiring the lock, that's also safe
+            # Another cleanup call will handle the actual cleanup
+            self._logger.debug("Cleanup cancelled while acquiring lock for %s", self._name)
+            # Ensure session is cleared even if we were cancelled before getting the lock
+            self._session = None
+            self._stdio_context = None
 
     @property
     def project_id(self) -> str:

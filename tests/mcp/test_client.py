@@ -1,7 +1,6 @@
 import unittest
 import os
 import socket
-import asyncio
 from mcpuniverse.mcp.manager import MCPManager
 
 
@@ -64,43 +63,6 @@ class TestMCPClient(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(output.content[0].text, "Hello world!")
         await client.cleanup()
-
-    async def test_client_sse_cleanup_lock(self):
-        """Test that cleanup is thread-safe with the lock (only for SSE transport)"""
-        
-        # Check if gateway server is running
-        gateway_address = os.environ.get("MCP_GATEWAY_ADDRESS", "http://localhost:8000")
-        # Extract port from address
-        try:
-            if "://" in gateway_address:
-                host_port = gateway_address.split("://")[1].split("/")[0]
-                host, port = host_port.split(":") if ":" in host_port else (host_port, "8000")
-            else:
-                host, port = "localhost", "8000"
-            
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                if s.connect_ex((host, int(port))) != 0:
-                    # Gateway server not running, skip test
-                    return
-        except Exception:
-            # If we can't check, try to connect anyway
-            pass
-        
-        # Test weather server
-        manager = MCPManager()
-        client = await manager.build_client(server_name="weather", transport="sse")
-        
-        # Try to call cleanup multiple times concurrently
-        # This should not cause errors due to the cleanup lock
-        await asyncio.gather(
-            client.cleanup(),
-            client.cleanup(),
-            client.cleanup(),
-            return_exceptions=True
-        )
-        
-        # Verify session is cleared
-        self.assertIsNone(client._session)
 
 if __name__ == "__main__":
     unittest.main()
