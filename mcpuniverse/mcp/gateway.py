@@ -662,7 +662,7 @@ class Gateway(metaclass=AutodocABCMeta):
 
         if mode == "sse":
             for server_name, config in self._server_configs.items():
-                if servers and server_name not in servers:
+                if servers is not None and server_name not in servers:
                     continue
                 if config.sse.command != "":
                     self.init_sse_server(server_name)
@@ -671,7 +671,7 @@ class Gateway(metaclass=AutodocABCMeta):
             self.start_servers(join=False)
         else:
             for server_name, _ in self._server_configs.items():
-                if servers and server_name not in servers:
+                if servers is not None and server_name not in servers:
                     continue
                 self.init_stdio_server(server_name)
 
@@ -733,7 +733,11 @@ def run_server(command, args):
 @click.option("--port", default=8000, help="Port to listen on for SSE")
 @click.option("--config", default="", help="Server config file")
 @click.option("--mode", default="stdio", help="Launch MCP clients via 'stdio' or 'sse'")
-@click.option("--servers", default="", help="A list of servers to use")
+@click.option(
+    "--servers",
+    default=None,
+    help="Comma-separated list of servers to use (empty string = no servers, omit = all servers)"
+)
 @click.option("--max-connections", default=10000, help="Max connections per server (default: 10000)")
 @click.option("--max-concurrent-requests", default=200, help="Max concurrent requests per server (default: 200)")
 @click.option("--idle-timeout", default=300, type=float,
@@ -748,8 +752,8 @@ def main(port: int, config: str, mode: str, servers: str, max_connections: int, 
         max_concurrent_requests=max_concurrent_requests,
         idle_timeout=idle_timeout if idle_timeout > 0 else None,
     )
-    servers = [s.strip() for s in servers.split(",") if s.strip()]
-    app = gateway.build_starlette_app(mode=mode, servers=servers)
+    servers_list = [s.strip() for s in servers.split(",") if s.strip()] if servers is not None else None
+    app = gateway.build_starlette_app(mode=mode, servers=servers_list)
     uvicorn.run(app, host="0.0.0.0", port=port)
 
 

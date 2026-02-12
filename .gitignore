@@ -209,9 +209,10 @@ mcpuniverse/benchmark/configs/deepresearch/browsecomp
 mcpuniverse/benchmark/configs/deepresearch/gaia_val_text_only
 mcpuniverse/benchmark/configs/deepresearch/hle_text_only
 
-# mcp test
+# dev tmp files
 tests/mcp/logs
 tests/mcp/test_gateway_stress.sh
 tests/mcp/test_gateway_stress.py
-
-mcpuniverse/mcp/env_pool
+tests/benchmark/mcpuniverse/test_financial_analysis_docker_pool.py
+mcpuniverse/rl
+mcpuniverse/agent/react_train_agent.py
