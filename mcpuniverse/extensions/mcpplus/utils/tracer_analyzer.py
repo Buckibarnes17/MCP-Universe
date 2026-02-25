@@ -64,10 +64,12 @@ class TracerAnalyzer:
         "gpt-4.1": {"input": 2.0, "output": 8.0},  
         "gpt-5": {"input": 1.25, "output": 10.0},  
         "gpt-5-mini": {"input": 0.25, "output": 2.0},   
+        "gpt-5-mini-2025-08-07": {"input": 0.25, "output": 2.0},   
         "claude-sonnet-4": {"input": 3.0, "output": 15.0},
         "claude-sonnet-3.7": {"input": 3.0, "output": 15.0},
         "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
         "gemini-3-pro-preview": {"input": 2.0, "output": 12.0},
+        "gemini-3-flash-preview": {"input": 0.5, "output": 3.0},
         "GLM4_6_OR": {"input": 0.55, "output": 2.19},
         # Add more as needed
     }
@@ -151,7 +153,7 @@ class TracerAnalyzer:
                 if post_llm_config:
                     self.postprocessor_llm_name = post_llm_config.get('llm')
 
-        self._logger.info("Config maps built: agents=%s, llms=%s",
+        self._logger.debug("Config maps built: agents=%s, llms=%s",
                          self.agent_name_map, self.llm_name_map)
 
     def analyze_task(self, trace_id: str, postprocessor_trace_id: Optional[str] = None) -> TaskMetrics:
@@ -202,15 +204,15 @@ class TracerAnalyzer:
 
         # If postprocessor_trace_id is provided, load those records separately
         if postprocessor_trace_id:
-            self._logger.info("Loading separate post-processor trace: %s", postprocessor_trace_id)
+            self._logger.debug("Loading separate post-processor trace: %s", postprocessor_trace_id)
             postprocessor_records = self._load_trace_records(postprocessor_trace_id)
-            self._logger.info("Loaded %d post-processor records", len(postprocessor_records))
+            self._logger.debug("Loaded %d post-processor records", len(postprocessor_records))
 
             # Debug: Check what types of records we have
             if postprocessor_records:
                 record_types = [rec.data.get('type', 'unknown') if hasattr(rec, 'data') else 'no-data'
                                for rec in postprocessor_records[:5]]
-                self._logger.info("Sample record types: %s", record_types)
+                self._logger.debug("Sample record types: %s", record_types)
         else:
             self._logger.warning("No postprocessor_trace_id provided, looking in main trace")
 
@@ -282,7 +284,7 @@ class TracerAnalyzer:
             if hasattr(trace_record, 'records'):
                 records.extend(trace_record.records)
 
-        self._logger.info("Loaded %d records for trace_id=%s", len(records), trace_id)
+        self._logger.debug("Loaded %d records for trace_id=%s", len(records), trace_id)
         return records
 
     def _separate_agent_records(
@@ -312,7 +314,7 @@ class TracerAnalyzer:
             else:
                 main_records.append(record)
 
-        self._logger.info("Separated records: main=%d, postprocessor=%d",
+        self._logger.debug("Separated records: main=%d, postprocessor=%d",
                          len(main_records), len(postprocessor_records))
         return main_records, postprocessor_records
 
@@ -432,7 +434,7 @@ class TracerAnalyzer:
 
         if llm_records:
             # Sum tokens from ALL LLM calls (all iterations)
-            self._logger.info("Analyzing %d LLM records for total token count:", llm_calls)
+            self._logger.debug("Analyzing %d LLM records for total token count:", llm_calls)
 
             for i, record in enumerate(llm_records, 1):
                 record_data = record.data if hasattr(record, 'data') else record
@@ -452,18 +454,18 @@ class TracerAnalyzer:
                 # Log each iteration's tokens
                 if response_text:
                     preview = response_text[:60] if len(response_text) > 60 else response_text
-                    self._logger.info(
+                    self._logger.debug(
                         "  Call %d/%d: input=%d tokens, output=%d tokens (%d chars): %s%s",
                         i, llm_calls, iter_input_tokens, iter_output_tokens, len(response_text),
                         preview, "..." if len(response_text) > 60 else ""
                     )
                 else:
-                    self._logger.info(
+                    self._logger.debug(
                         "  Call %d/%d: input=%d tokens, output=%d tokens (empty response)",
                         i, llm_calls, iter_input_tokens, iter_output_tokens
                     )
 
-            self._logger.info(
+            self._logger.debug(
                 "Total across all %d iterations: input=%d tokens, output=%d tokens, total=%d tokens",
                 llm_calls, input_tokens, output_tokens, input_tokens + output_tokens
             )
@@ -477,7 +479,7 @@ class TracerAnalyzer:
             model_name=model_name
         )
 
-        self._logger.info(
+        self._logger.debug(
             "Agent %s: iterations=%d, total_input_tokens=%d (all iters), total_output_tokens=%d (all iters), "
             "input_cost=$%.4f, output_cost=$%.4f, total_cost=$%.4f",
             agent_name, iterations, input_tokens, output_tokens, input_cost, output_cost, input_cost + output_cost
