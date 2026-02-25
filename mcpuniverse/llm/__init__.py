@@ -10,7 +10,7 @@ from .grok import GrokModel
 from .openai_agent import OpenAIAgentModel
 from .openrouter import OpenRouterModel
 from .gemini import GeminiModel
-from .vllm_gptoss import VLLMLocalModel
+from .vllm_local import VLLMLocalModel
 from .claude_wr import ClaudeWRModel
 
 __all__ = [
