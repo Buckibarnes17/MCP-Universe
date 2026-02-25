@@ -10,6 +10,7 @@ import asyncio
 import json
 import keyword
 import os
+import shlex
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional, Any
@@ -19,7 +20,7 @@ from mcp.server.fastmcp import FastMCP, Context as FastMCPContext
 from mcp.types import ToolAnnotations
 
 from mcpuniverse.common.logger import get_logger
-from mcpuniverse.extensions.mcpplus.wrapper.wrapper_manager import MCPWrapperManager, WrapperConfig
+from mcpuniverse.extensions.mcpplus.wrapper.wrapper_manager import MCPWrapperManager, WrapperConfig  # pylint: disable=no-name-in-module
 from mcpuniverse.llm.manager import ModelManager
 from mcpuniverse.common.context import Context
 
@@ -75,7 +76,7 @@ class ProxyServer:
             instructions="Proxy MCP server with post-processing",
         )
 
-    async def _init_client(self):
+    async def _init_client(self):  # pylint: disable=too-many-statements
         """Build a wrapped client to the upstream server."""
         # Initialize manager with wrapper support
         wrapper_cfg = WrapperConfig(**(self._config.wrapper or {})) if self._config.wrapper else None
@@ -111,7 +112,6 @@ class ProxyServer:
             # stdio server
             # Split command string if it contains arguments
             # (Cursor config sometimes has "npx -y @playwright/mcp" as single string)
-            import shlex
             if isinstance(self._config.upstream_command, str) and ' ' in self._config.upstream_command:
                 # Command contains spaces - need to split it
                 if self._config.upstream_args:
@@ -177,7 +177,7 @@ class ProxyServer:
             mcp_gateway_address=self._config.upstream_address,
         )
 
-    async def start(self):
+    async def start(self):  # pylint: disable=too-many-statements
         """Start the proxy server by binding handlers and initializing the upstream client."""
         await self._init_client()
 

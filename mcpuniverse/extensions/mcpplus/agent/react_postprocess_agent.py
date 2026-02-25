@@ -11,6 +11,8 @@ Iteration only happens if:
 - Output is empty from both methods
 - Code execution fails
 """
+# pylint: disable=too-many-locals,too-many-return-statements,too-many-branches
+# pylint: disable=too-many-statements,broad-exception-caught
 import json
 from typing import Any, Dict, Optional, Union, List
 from dataclasses import dataclass
@@ -18,8 +20,9 @@ from dataclasses import dataclass
 from mcpuniverse.agent.base import BaseAgent, BaseAgentConfig, AgentResponse
 from mcpuniverse.llm.base import BaseLLM
 from mcpuniverse.common.logger import get_logger
-from mcpuniverse.extensions.mcpplus.utils.safe_executor import SafeCodeExecutor
-from mcpuniverse.extensions.mcpplus.utils.stats import count_tokens, PostProcessStats
+from mcpuniverse.tracer import Tracer
+from mcpuniverse.extensions.mcpplus.utils.safe_executor import SafeCodeExecutor  # pylint: disable=no-name-in-module
+from mcpuniverse.extensions.mcpplus.utils.stats import count_tokens, PostProcessStats  # pylint: disable=no-name-in-module
 
 
 @dataclass
@@ -130,7 +133,7 @@ class PostProcessAgent(BaseAgent):
         self._extraction_prompt = DUAL_EXTRACTION_PROMPT
         self._logger.debug("Using default DUAL_EXTRACTION_PROMPT")
 
-    async def initialize(self):
+    async def initialize(self):  # pylint: disable=arguments-differ
         """Initialize agent."""
         if self._initialized:
             return
@@ -138,7 +141,7 @@ class PostProcessAgent(BaseAgent):
 
     async def cleanup(self):
         """Cleanup resources."""
-        pass
+        pass  # pylint: disable=unnecessary-pass
 
     async def _execute(
         self,
@@ -178,10 +181,8 @@ class PostProcessAgent(BaseAgent):
         tool_output = input_data.get("tool_output", "")
         expected_info = input_data.get("expected_info", "")
 
-        # Get tracer and task_path from kwargs (BaseAgent.execute will pass it)
-        from mcpuniverse.tracer import Tracer
+        # Get tracer from kwargs (BaseAgent.execute will pass it)
         tracer = kwargs.get("tracer", Tracer())
-        task_path = kwargs.get("task_path", "unknown_task")
 
         self._logger.info(
             "Processing tool=%s, output_length=%d, expected_info=%s",
@@ -220,7 +221,7 @@ class PostProcessAgent(BaseAgent):
             success=bool(result and result.strip())
         )
 
-        # Encode stats as JSON in response 
+        # Encode stats as JSON in response
         response_data = {
             "filtered_output": result,
             "stats": {
@@ -343,16 +344,15 @@ class PostProcessAgent(BaseAgent):
                     # But log it and potentially retry once
                     self._logger.warning("LLM timeout on iteration %d, retrying...", iteration + 1)
                     continue
-                else:
-                    # For other errors, add to history
-                    iteration_history.append({
-                        "iteration": iteration + 1,
-                        "direct": "",
-                        "code": "",
-                        "code_result": "",
-                        "error": f"LLM error: {error_msg}"
-                    })
-                    continue
+                # For other errors, add to history
+                iteration_history.append({
+                    "iteration": iteration + 1,
+                    "direct": "",
+                    "code": "",
+                    "code_result": "",
+                    "error": f"LLM error: {error_msg}"
+                })
+                continue
 
             # Execute code
             code_result = ""
@@ -425,29 +425,27 @@ class PostProcessAgent(BaseAgent):
                             f"Generate more concise extraction and code."
                         )
                         continue
-                    else:
-                        # Last iteration and both too large - compare total size vs original
-                        self._logger.warning(
-                            "⚠️  Last iteration: both outputs too large (direct=%d, code=%d, max=%d). "
-                            "Comparing filtered vs original size...",
-                            direct_tokens, code_output_tokens, max_allowed_tokens
-                        )
-                        # Calculate what we'd return if we use filtered output
-                        filtered_output = self._format_output(direct_extraction, code_result, None)
-                        filtered_total_tokens = count_tokens(filtered_output, model=self._model_name)
+                    # Last iteration and both too large - compare total size vs original
+                    self._logger.warning(
+                        "⚠️  Last iteration: both outputs too large (direct=%d, code=%d, max=%d). "
+                        "Comparing filtered vs original size...",
+                        direct_tokens, code_output_tokens, max_allowed_tokens
+                    )
+                    # Calculate what we'd return if we use filtered output
+                    filtered_output = self._format_output(direct_extraction, code_result, None)
+                    filtered_total_tokens = count_tokens(filtered_output, model=self._model_name)
 
-                        if filtered_total_tokens < input_tokens:
-                            self._logger.info(
-                                "Filtered output (%d tokens) smaller than original (%d tokens), using filtered",
-                                filtered_total_tokens, input_tokens
-                            )
-                            return filtered_output
-                        else:
-                            self._logger.warning(
-                                "Filtered output (%d tokens) larger than original (%d tokens), returning original",
-                                filtered_total_tokens, input_tokens
-                            )
-                            return tool_output
+                    if filtered_total_tokens < input_tokens:
+                        self._logger.info(
+                            "Filtered output (%d tokens) smaller than original (%d tokens), using filtered",
+                            filtered_total_tokens, input_tokens
+                        )
+                        return filtered_output
+                    self._logger.warning(
+                        "Filtered output (%d tokens) larger than original (%d tokens), returning original",
+                        filtered_total_tokens, input_tokens
+                    )
+                    return tool_output
 
                 # Determine which outputs to include based on size
                 use_direct = has_direct and not direct_too_large
@@ -470,8 +468,7 @@ class PostProcessAgent(BaseAgent):
                     # Fallback: continue iteration or return original
                     if iteration < self._config.max_iterations - 1:
                         continue
-                    else:
-                        return tool_output
+                    return tool_output
 
                 # Success! Return output (possibly excluding oversized parts)
                 final_direct = direct_extraction if use_direct else ""
@@ -515,14 +512,13 @@ class PostProcessAgent(BaseAgent):
                 code_result=best_code_result,
                 code_error=best_code_error if not best_code_result else None
             )
-        else:
-            # Complete failure - return original unprocessed tool output
-            self._logger.error(
-                "All %d iterations exhausted with no valid results from either method. "
-                "Returning original tool output.",
-                self._config.max_iterations
-            )
-            return tool_output
+        # Complete failure - return original unprocessed tool output
+        self._logger.error(
+            "All %d iterations exhausted with no valid results from either method. "
+            "Returning original tool output.",
+            self._config.max_iterations
+        )
+        return tool_output
 
     def _build_prompt(
         self,

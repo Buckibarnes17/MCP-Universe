@@ -4,6 +4,7 @@ Safe Python code executor with security restrictions.
 This module provides SafeCodeExecutor for executing dynamically generated
 Python code in a restricted environment with timeout and blacklist-based security.
 """
+# pylint: disable=too-few-public-methods
 import signal
 from typing import Any, Dict
 

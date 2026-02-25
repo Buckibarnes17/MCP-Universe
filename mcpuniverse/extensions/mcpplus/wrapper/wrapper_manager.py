@@ -4,7 +4,7 @@ MCPWrapperManager for building MCP clients with optional wrapper support.
 This module extends MCPManager to support building wrapped clients that can
 post-process tool outputs.
 """
-# pylint: disable=broad-exception-caught
+# pylint: disable=broad-exception-caught,protected-access
 import json
 from dataclasses import dataclass
 from typing import Optional, Union, Dict, Any, List
@@ -15,8 +15,10 @@ from mcpuniverse.mcp.manager import MCPManager
 from mcpuniverse.mcp.client import MCPClient
 from mcpuniverse.common.context import Context
 from mcpuniverse.common.logger import get_logger
-from mcpuniverse.extensions.mcpplus.utils.stats import PostProcessStats
-from mcpuniverse.extensions.mcpplus.utils.safe_executor import SafeCodeExecutor
+from mcpuniverse.tracer import Tracer
+from mcpuniverse.extensions.mcpplus.agent.react_postprocess_agent import PostProcessAgent  # pylint: disable=no-name-in-module
+from mcpuniverse.extensions.mcpplus.utils.stats import PostProcessStats, count_tokens  # pylint: disable=no-name-in-module
+from mcpuniverse.extensions.mcpplus.utils.safe_executor import SafeCodeExecutor  # pylint: disable=no-name-in-module
 
 
 @dataclass
@@ -96,15 +98,22 @@ class WrappedMCPClient(MCPClient):
             The expected_info description text.
         """
         return (
-            'A precise description of what specific information you need from this tool call to accomplish your immediate goal. '
+            'A precise description of what specific information you need from this '
+            'tool call to accomplish your immediate goal. '
             'Be explicit about:\n'
-            '1. WHAT data/information you need (e.g., "the adult ticket price", "list of product URLs", "error message text")\n'
-            '2. WHY you need it (e.g., "to answer the user\'s question", "to visit in the next step", "to debug the issue")\n'
-            '3. Any CONSTRAINTS (e.g., "only from the pricing section", "maximum 10 items", "published after 2023")\n'
+            '1. WHAT data/information you need '
+            '(e.g., "the adult ticket price", "list of product URLs", "error message text")\n'
+            '2. WHY you need it '
+            '(e.g., "to answer the user\'s question", "to visit in the next step", "to debug the issue")\n'
+            '3. Any CONSTRAINTS '
+            '(e.g., "only from the pricing section", "maximum 10 items", "published after 2023")\n'
             'Example good descriptions:\n'
-            '  - "The adult ticket price for ABC Theatre from the pricing table, needed to answer the user\'s question about ticket cost"\n'
-            '  - "URLs of all product links on the page, needed to visit each product page in subsequent steps"\n'
-            '  - "All information is needed because I need the complete page structure to locate the navigation menu"\n'
+            '  - "The adult ticket price for ABC Theatre from the pricing table, '
+            'needed to answer the user\'s question about ticket cost"\n'
+            '  - "URLs of all product links on the page, '
+            'needed to visit each product page in subsequent steps"\n'
+            '  - "All information is needed because I need the complete page structure '
+            'to locate the navigation menu"\n'
             'Example bad descriptions:\n'
             '  - "get information" (too vague)\n'
             '  - "price" (unclear which price, why needed, from where)\n'
@@ -137,7 +146,7 @@ class WrappedMCPClient(MCPClient):
 
         return tools
 
-    async def execute_tool(
+    async def execute_tool(  # pylint: disable=too-many-return-statements
         self,
         tool_name: str,
         arguments: dict[str, Any],
@@ -197,7 +206,6 @@ class WrappedMCPClient(MCPClient):
         result_text = self._extract_text_content(result)
 
         # Check if output exceeds threshold (using token count)
-        from mcpuniverse.extensions.mcpplus.utils.stats import count_tokens
         # Get model name from post-processor for accurate tokenization
         model_name = "gpt-4"  # Default fallback
         if self._post_processor and hasattr(self._post_processor, '_model_name'):
@@ -239,13 +247,13 @@ class WrappedMCPClient(MCPClient):
                 result.content = [TextContent(type="text", text=filtered_text)]
                 result.isError = False
                 return result
-            else:
-                # Fallback: return as-is if not a CallToolResult (shouldn't happen)
-                self._wrapper_logger.warning("Result is not CallToolResult, returning filtered text directly")
-                return CallToolResult(
-                    content=[TextContent(type="text", text=filtered_text)],
-                    isError=False
-                )
+
+            # Fallback: return as-is if not a CallToolResult (shouldn't happen)
+            self._wrapper_logger.warning("Result is not CallToolResult, returning filtered text directly")
+            return CallToolResult(
+                content=[TextContent(type="text", text=filtered_text)],
+                isError=False
+            )
 
         except Exception as e:
             self._wrapper_logger.warning(
@@ -314,8 +322,6 @@ class WrappedMCPClient(MCPClient):
         # If tracer is None, use a shared post-processor tracer stored on the manager
         # This ensures all post-processor calls for this task share the same trace_id
         if tracer is None:
-            from mcpuniverse.tracer import Tracer
-
             # Create or reuse shared post-processor tracer on the manager
             # IMPORTANT: Use the same collector as stored on the manager (set by benchmark runner)
             if not hasattr(self._manager, '_postprocessor_tracer'):
@@ -324,8 +330,9 @@ class WrappedMCPClient(MCPClient):
                 self._manager._postprocessor_tracer = Tracer(collector=collector)
                 self._wrapper_logger.warning(
                     "No tracer provided from agent. Using shared post-processor tracer "
-                    f"(trace_id: {self._manager._postprocessor_tracer.trace_id}, "
-                    f"collector: {collector})"
+                    "(trace_id: %s, collector: %s)",
+                    self._manager._postprocessor_tracer.trace_id,
+                    collector
                 )
             tracer = self._manager._postprocessor_tracer
 
@@ -556,7 +563,7 @@ class MCPWrapperManager(MCPManager):
             )
 
         # Fall back to standard client
-        return await super().build_client(
+        return await super().build_client(  # pylint: disable=unexpected-keyword-arg
             server_name=server_name,
             transport=transport,
             timeout=timeout,
@@ -573,7 +580,6 @@ class MCPWrapperManager(MCPManager):
         """
         config = self._wrapper_config
 
-        from mcpuniverse.extensions.mcpplus.agent.react_postprocess_agent import PostProcessAgent
         self._logger.debug("Initializing post-processor (generates both direct extraction AND code in one call)")
 
         if self._llm is None:
@@ -669,12 +675,12 @@ class MCPWrapperManager(MCPManager):
         # For direct SSE URLs, connect directly without server registration
         if transport == "sse" and mcp_gateway_address and mcp_gateway_address.startswith("http"):
             # Direct SSE URL provided - connect directly
-            client = MCPClient(name=f"{server_name}_client", permissions=permissions)
+            client = MCPClient(name=f"{server_name}_client", permissions=permissions)  # pylint: disable=unexpected-keyword-arg
             await client.connect_to_sse_server(mcp_gateway_address, timeout=timeout)
             self._logger.info("Connected directly to SSE server at %s", mcp_gateway_address)
         else:
             # Build standard client (requires server registration)
-            client = await super().build_client(
+            client = await super().build_client(  # pylint: disable=unexpected-keyword-arg
                 server_name=server_name,
                 transport=transport,
                 timeout=timeout,

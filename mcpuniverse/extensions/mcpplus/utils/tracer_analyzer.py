@@ -6,12 +6,14 @@ This module analyzes tracer logs to compute:
 - Token usage from LLM calls
 - Cost calculations based on model pricing
 """
+# pylint: disable=too-many-instance-attributes,too-few-public-methods
+# pylint: disable=unused-argument,too-many-return-statements
 import json
 from typing import Dict, Any, List, Optional, Tuple
 from dataclasses import dataclass
 from mcpuniverse.tracer.collectors.base import BaseCollector
 from mcpuniverse.common.logger import get_logger
-from mcpuniverse.extensions.mcpplus.utils.stats import count_tokens
+from mcpuniverse.extensions.mcpplus.utils.stats import count_tokens  # pylint: disable=no-name-in-module
 
 
 @dataclass
@@ -410,27 +412,25 @@ class TracerAnalyzer:
             """Extract text from response, handling both string and dict formats."""
             if response is None:
                 return ''
-            elif isinstance(response, str):
+            if isinstance(response, str):
                 return response
-            elif isinstance(response, dict):
+            if isinstance(response, dict):
                 # For function_call agents, response might be a dict with 'content' or 'message'
                 # Or it might have the text response directly
                 if 'content' in response:
                     content = response['content']
                     if isinstance(content, str):
                         return content
-                    elif isinstance(content, list):
+                    if isinstance(content, list):
                         # Content might be a list of message parts
                         texts = [str(c) for c in content if c]
                         return ' '.join(texts)
                 # Try JSON serialization for structured responses
-                import json
                 try:
                     return json.dumps(response)
-                except:
+                except Exception:  # pylint: disable=broad-except
                     return str(response)
-            else:
-                return str(response)
+            return str(response)
 
         if llm_records:
             # Sum tokens from ALL LLM calls (all iterations)
