@@ -168,8 +168,9 @@ class PostProcessAgent(BaseAgent):
         except json.JSONDecodeError:
             self._logger.error("Invalid JSON input: %s", message[:200])
             return AgentResponse(
-                response="ERROR: Invalid JSON input",
-                stats={}
+                name=self._name,
+                class_name=self.__class__.__name__,
+                response="ERROR: Invalid JSON input"
             )
 
         tool_name = input_data.get("tool_name", "unknown_tool")
