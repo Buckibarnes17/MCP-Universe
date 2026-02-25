@@ -31,6 +31,10 @@ class MockLLM:
             "code": "result = 'code result'"
         })
 
+    def dump_config(self):
+        """Mock dump_config method."""
+        return {"type": "mock", "model_name": "gpt-4o-mini"}
+
 
 class MockPostProcessor:
     """Mock post-processor for testing."""
@@ -79,8 +83,8 @@ class TestWrapperConfig:
         config = WrapperConfig()
         assert config.enabled is False
         assert config.token_threshold == 2000
-        assert config.post_process_llm is None
-        assert config.execution_timeout == 10
+        assert config.post_process_llm == {"type": "openai", "model_name": "gpt-5-mini"}
+        assert config.llm_timeout == 500
         assert config.max_iterations == 3
         assert config.skip_iteration_on_size_failure is False
 
@@ -90,14 +94,14 @@ class TestWrapperConfig:
             enabled=True,
             token_threshold=1500,
             post_process_llm={"type": "openai", "model": "gpt-4o-mini"},
-            execution_timeout=20,
+            llm_timeout=600,
             max_iterations=5,
             skip_iteration_on_size_failure=True
         )
         assert config.enabled is True
         assert config.token_threshold == 1500
         assert config.post_process_llm["type"] == "openai"
-        assert config.execution_timeout == 20
+        assert config.llm_timeout == 600
         assert config.max_iterations == 5
         assert config.skip_iteration_on_size_failure is True
 
@@ -229,6 +233,9 @@ class TestWrappedMCPClient:
         """Test tool execution with post-processing."""
         config = WrapperConfig(enabled=True, token_threshold=100)
         post_processor = MockPostProcessor()
+
+        # Create a proper mock manager with tracer support
+        from mcpuniverse.tracer import Tracer
         manager = Mock()
         manager._aggregated_stats = {
             "total_iterations": 0,
@@ -240,6 +247,8 @@ class TestWrappedMCPClient:
             "filtered_tokens": 0,
             "tool_calls_processed": 0
         }
+        manager._postprocessor_tracer = Tracer()
+        manager._trace_collector = None
 
         client = WrappedMCPClient(
             name="test-client",
@@ -318,6 +327,8 @@ class TestWrappedMCPClient:
             raise ValueError("Post-processing failed")
         failing_processor.execute = failing_execute
 
+        # Create a proper mock manager with tracer support
+        from mcpuniverse.tracer import Tracer
         manager = Mock()
         manager._aggregated_stats = {
             "total_iterations": 0,
@@ -329,6 +340,8 @@ class TestWrappedMCPClient:
             "filtered_tokens": 0,
             "tool_calls_processed": 0
         }
+        manager._postprocessor_tracer = Tracer()
+        manager._trace_collector = None
 
         client = WrappedMCPClient(
             name="test-client",
@@ -375,7 +388,6 @@ class TestWrappedMCPClient:
         assert text == "Plain string"
 
 
-@pytest.mark.asyncio
 class TestMCPWrapperManager:
     """Test suite for MCPWrapperManager."""
 
@@ -458,6 +470,7 @@ class TestMCPWrapperManager:
         )
         assert manager3._is_wrapper_enabled() is True
 
+    @pytest.mark.asyncio
     async def test_build_client_without_wrapper(self):
         """Test building standard client when wrapper is disabled."""
         manager = MCPWrapperManager(
@@ -477,6 +490,7 @@ class TestMCPWrapperManager:
         # Should return standard client
         assert client == mock_client
 
+    @pytest.mark.asyncio
     async def test_build_wrapped_client_without_llm(self):
         """Test that building wrapped client fails without LLM."""
         manager = MCPWrapperManager(
@@ -488,6 +502,7 @@ class TestMCPWrapperManager:
         with pytest.raises(RuntimeError, match="LLM must be set"):
             await manager.build_wrapped_client(server_name="test-server")
 
+    @pytest.mark.asyncio
     async def test_build_wrapped_client_success(self):
         """Test successfully building a wrapped client."""
         wrapper_config = WrapperConfig(enabled=True, token_threshold=100)
@@ -519,11 +534,12 @@ class TestMCPWrapperManager:
         assert client._name == "test-server"
         assert client._post_processor is not None
 
+    @pytest.mark.asyncio
     async def test_initialize_post_processor(self):
         """Test post-processor initialization."""
         wrapper_config = WrapperConfig(
             enabled=True,
-            execution_timeout=15,
+            llm_timeout=600,
             max_iterations=5
         )
         manager = MCPWrapperManager(config=None, wrapper_config=wrapper_config)

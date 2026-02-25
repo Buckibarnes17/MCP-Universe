@@ -64,6 +64,10 @@ class MockLLM:
             "code": "result = data.split('\\n')[0] if data else 'no data'"
         })
 
+    def dump_config(self):
+        """Mock dump_config method."""
+        return {"type": "mock", "model_name": "gpt-4o-mini"}
+
 
 @pytest.mark.asyncio
 class TestEndToEndFlow:
@@ -75,7 +79,7 @@ class TestEndToEndFlow:
         wrapper_config = WrapperConfig(
             enabled=True,
             token_threshold=100,  # Low threshold to trigger post-processing
-            execution_timeout=10,
+            llm_timeout=500,
             max_iterations=3
         )
 
@@ -439,6 +443,7 @@ Historical data shows this is typical for this time of year.
         manager = MCPWrapperManager(config=None, wrapper_config=wrapper_config)
 
         # LLM generates code that parses JSON
+        # Provide multiple responses in case of retry due to oversized output
         llm_response = {
             "direct_extraction": "Product name is 'Laptop' and price is $999",
             "code": """
@@ -447,7 +452,8 @@ parsed = json.loads(data)
 result = f"Product: {parsed['name']}, Price: ${parsed['price']}"
 """
         }
-        llm = MockLLM(responses=[llm_response])
+        # Provide same response 2-3 times to handle potential retries
+        llm = MockLLM(responses=[llm_response, llm_response, llm_response])
         manager.set_llm(llm)
 
         # Build wrapped client
@@ -467,13 +473,24 @@ result = f"Product: {parsed['name']}, Price: ${parsed['price']}"
         ):
             client = await manager.build_wrapped_client(server_name="test-server")
 
-        # Tool returns JSON data
-        json_output = json.dumps({
+        # Tool returns JSON data (make it long enough to exceed threshold)
+        json_obj = {
             "name": "Laptop",
             "price": 999,
             "description": "High-performance laptop with 16GB RAM and 512GB SSD",
-            "reviews": ["Great product", "Fast delivery", "Excellent quality"]
-        }) * 10  # Repeat to exceed threshold
+            "reviews": ["Great product", "Fast delivery", "Excellent quality"],
+            "specs": {
+                "cpu": "Intel i7",
+                "ram": "16GB",
+                "storage": "512GB SSD",
+                "display": "15.6 inch FHD"
+            },
+            "warranty": "2 years",
+            "in_stock": True
+        }
+        # Add padding to make it long enough
+        json_obj["extra_data"] = "padding " * 100
+        json_output = json.dumps(json_obj)
 
         original_result = CallToolResult(
             content=[TextContent(type="text", text=json_output)],
@@ -493,8 +510,10 @@ result = f"Product: {parsed['name']}, Price: ${parsed['price']}"
 
         # Verify code was executed successfully
         result_text = result.content[0].text
-        assert "Product: Laptop, Price: $999" in result_text
         assert "DUAL EXTRACTION RESULTS" in result_text
+        # The code result should contain the formatted product info
+        assert "Product: Laptop" in result_text
+        assert "Price: $999" in result_text
 
         # Verify significant compression
         assert len(result_text) < len(json_output) * 0.5
