@@ -47,13 +47,13 @@ def _get_config_dir() -> Path:
 def _build_proxy_config(
     upstream: str,
     server_name: str,
-    command: str,
-    args: List[str],
+    command: Optional[str],
+    args: Optional[List[str]],
     env: Optional[Dict[str, str]] = None,
     llm_provider: str = "openai",
-    llm_model: str = "gpt-4.1",
+    llm_model: str = "gpt-5-mini-2025-08-07",
     llm_api_key_env: str = "OPENAI_API_KEY",
-    token_threshold: int = 500,
+    token_threshold: int = 2000,
 ) -> Dict[str, Any]:
     """Build a proxy wrapper config for the given upstream server."""
     return {
@@ -61,9 +61,9 @@ def _build_proxy_config(
         "server_name": server_name,
         "transport": "stdio",
         "upstream_address": "",
-        "timeout": 30,
+        "timeout": 500,
         "upstream_command": command,
-        "upstream_args": args,
+        "upstream_args": args if args is not None else [],
         "upstream_env": env or {},
         "llm": {
             "name": llm_provider,
@@ -76,7 +76,7 @@ def _build_proxy_config(
             "enabled": True,
             "token_threshold": token_threshold,
             "post_process_llm": None,
-            "execution_timeout": 10,
+            "llm_timeout": 500,
             "max_iterations": 3,
             "skip_iteration_on_size_failure": False,
         },
@@ -96,7 +96,7 @@ def _build_cursor_entry(
         "command": "python3",
         "args": [
             "-m",
-            "mcpuniverse.extensions.mcpplus.mcp.proxy_server",
+            "mcpuniverse.extensions.mcpplus.tools.proxy_server",
             "--config",
             str(config_path),
             "--transport",
@@ -114,10 +114,13 @@ def _parse_mcp_config(config_path: Path) -> Dict[str, Dict[str, Any]]:
 
     # Handle both flat format and nested mcpServers format
     if "mcpServers" in data:
-        return data.get("mcpServers", {})
+        servers = data.get("mcpServers", {})
+    else:
+        # Assume flat format where keys are server names
+        servers = data
 
-    # Assume flat format where keys are server names
-    return {k: v for k, v in data.items() if isinstance(v, dict) and "command" in v}
+    # Return servers that have either command (stdio) or url (SSE)
+    return {k: v for k, v in servers.items() if isinstance(v, dict) and ("command" in v or "url" in v)}
 
 
 def _prompt_confirmation(message: str = "Proceed?") -> bool:
@@ -135,9 +138,9 @@ def _prepare_wrap_changes(
     mcp_config_path: Path,
     servers: Optional[List[str]] = None,
     llm_provider: str = "openai",
-    llm_model: str = "gpt-4.1",
+    llm_model: str = "gpt-5-mini-2025-08-07",
     llm_api_key_env: str = "OPENAI_API_KEY",
-    token_threshold: int = 500,
+    token_threshold: int = 2000,
 ) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Tuple[Path, Dict[str, Any]]], Optional[str]]:
     """
     Prepare the changes that will be made (without writing anything).
@@ -187,26 +190,52 @@ def _prepare_wrap_changes(
     for name, server_cfg in servers_to_wrap.items():
         plus_name = f"{name}-plus"
 
-        # Extract command/args from server config
-        command = server_cfg.get("command", "")
-        args = server_cfg.get("args", [])
-        env = server_cfg.get("env", {})
+        # Check if this is an SSE server (has url) or stdio server (has command)
+        if "url" in server_cfg:
+            # SSE server
+            url = server_cfg.get("url", "")
+            if not url:
+                continue
 
-        if not command:
-            continue
+            # Build proxy config for SSE
+            proxy_config = _build_proxy_config(
+                upstream=name,
+                server_name=plus_name,
+                command=None,  # No command for SSE
+                args=None,
+                env=None,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+                llm_api_key_env=llm_api_key_env,
+                token_threshold=token_threshold,
+            )
+            # Override transport and address for SSE
+            proxy_config["transport"] = "sse"
+            proxy_config["upstream_address"] = url
+            proxy_config["upstream_command"] = None
+            proxy_config["upstream_args"] = None
+            proxy_config["upstream_env"] = None
+        else:
+            # stdio server
+            command = server_cfg.get("command", "")
+            args = server_cfg.get("args", [])
+            env = server_cfg.get("env", {})
 
-        # Build proxy config
-        proxy_config = _build_proxy_config(
-            upstream=name,
-            server_name=plus_name,
-            command=command,
-            args=args,
-            env=env,
-            llm_provider=llm_provider,
-            llm_model=llm_model,
-            llm_api_key_env=llm_api_key_env,
-            token_threshold=token_threshold,
-        )
+            if not command:
+                continue
+
+            # Build proxy config for stdio
+            proxy_config = _build_proxy_config(
+                upstream=name,
+                server_name=plus_name,
+                command=command,
+                args=args,
+                env=env,
+                llm_provider=llm_provider,
+                llm_model=llm_model,
+                llm_api_key_env=llm_api_key_env,
+                token_threshold=token_threshold,
+            )
 
         proxy_config_path = config_dir / f"proxy_{name}.json"
         proxy_configs[plus_name] = (proxy_config_path, proxy_config)
@@ -230,9 +259,9 @@ def wrap_servers(
     mcp_config_path: Path,
     servers: Optional[List[str]] = None,
     llm_provider: str = "openai",
-    llm_model: str = "gpt-4.1",
+    llm_model: str = "gpt-5-mini-2025-08-07",
     llm_api_key_env: str = "OPENAI_API_KEY",
-    token_threshold: int = 500,
+    token_threshold: int = 2000,
     dry_run: bool = False,
     yes: bool = False,
     output_path: Optional[Path] = None,
@@ -356,8 +385,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--llm-model",
-        default="gpt-4.1",
-        help="LLM model for post-processing (default: gpt-4.1)",
+        default="gpt-5-mini-2025-08-07",
+        help="LLM model for post-processing (default: gpt-5-mini)",
     )
     parser.add_argument(
         "--llm-api-key-env",
@@ -367,8 +396,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--token-threshold",
         type=int,
-        default=500,
-        help="Min tokens to trigger post-processing (default: 500)",
+        default=2000,
+        help="Min tokens to trigger post-processing (default: 2000)",
     )
     parser.add_argument(
         "--output",

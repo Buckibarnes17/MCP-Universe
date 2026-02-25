@@ -163,6 +163,12 @@ class WrappedMCPClient(MCPClient):
         # Extract expected_info if present
         expected_info = arguments.pop('expected_info', None)
 
+        # Debug logging
+        self._wrapper_logger.info(
+            "Calling upstream tool %s with args: %s (expected_info extracted: %s)",
+            tool_name, arguments, bool(expected_info)
+        )
+
         # Call original tool
         result = await super().execute_tool(
             tool_name=tool_name,
@@ -172,6 +178,13 @@ class WrappedMCPClient(MCPClient):
             callbacks=callbacks
         )
         self._wrapper_logger.info("Tool call succeeded")
+
+        # Debug: log the result type and structure
+        self._wrapper_logger.debug(
+            "Original result type: %s, is CallToolResult: %s",
+            type(result).__name__,
+            isinstance(result, CallToolResult)
+        )
 
         # Check if post-processing is needed
         if not self._wrapper_config.enabled:
@@ -220,11 +233,19 @@ class WrappedMCPClient(MCPClient):
                 self._wrapper_logger.warning("Post-processor returned None, using original result")
                 return result
 
-            # Create new CallToolResult with filtered content
-            return CallToolResult(
-                content=[TextContent(type="text", text=filtered_text)],
-                isError=False
-            )
+            # Modify the original result to preserve its structure
+            if isinstance(result, CallToolResult):
+                # Replace the content while preserving the result structure
+                result.content = [TextContent(type="text", text=filtered_text)]
+                result.isError = False
+                return result
+            else:
+                # Fallback: return as-is if not a CallToolResult (shouldn't happen)
+                self._wrapper_logger.warning("Result is not CallToolResult, returning filtered text directly")
+                return CallToolResult(
+                    content=[TextContent(type="text", text=filtered_text)],
+                    isError=False
+                )
 
         except Exception as e:
             self._wrapper_logger.warning(
@@ -642,17 +663,24 @@ class MCPWrapperManager(MCPManager):
 
         # Initialize post-processor if not already initialized
         if self._post_processor is None:
-            self._logger.debug("Initializing post-processor for wrapped client")
+            self._logger.info("Initializing post-processor for wrapped client")
             await self._initialize_post_processor()
 
-        # Build standard client first
-        client = await super().build_client(
-            server_name=server_name,
-            transport=transport,
-            timeout=timeout,
-            mcp_gateway_address=mcp_gateway_address,
-            permissions=permissions
-        )
+        # For direct SSE URLs, connect directly without server registration
+        if transport == "sse" and mcp_gateway_address and mcp_gateway_address.startswith("http"):
+            # Direct SSE URL provided - connect directly
+            client = MCPClient(name=f"{server_name}_client", permissions=permissions)
+            await client.connect_to_sse_server(mcp_gateway_address, timeout=timeout)
+            self._logger.info("Connected directly to SSE server at %s", mcp_gateway_address)
+        else:
+            # Build standard client (requires server registration)
+            client = await super().build_client(
+                server_name=server_name,
+                transport=transport,
+                timeout=timeout,
+                mcp_gateway_address=mcp_gateway_address,
+                permissions=permissions
+            )
 
         # Wrap the client
         wrapped_client = self._wrap_client(client)
