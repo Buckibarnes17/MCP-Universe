@@ -104,6 +104,7 @@ class WrappedMCPClient(MCPClient):
             'Example good descriptions:\n'
             '  - "The adult ticket price for ABC Theatre from the pricing table, needed to answer the user\'s question about ticket cost"\n'
             '  - "URLs of all product links on the page, needed to visit each product page in subsequent steps"\n'
+            '  - "All information is needed because I need the complete page structure to locate the navigation menu"\n'
             'Example bad descriptions:\n'
             '  - "get information" (too vague)\n'
             '  - "price" (unclear which price, why needed, from where)\n'
@@ -552,7 +553,7 @@ class MCPWrapperManager(MCPManager):
         config = self._wrapper_config
 
         from mcpuniverse.extensions.mcpplus.agent.react_postprocess_agent import PostProcessAgent
-        self._logger.info("Initializing post-processor (generates both direct extraction AND code in one call)")
+        self._logger.debug("Initializing post-processor (generates both direct extraction AND code in one call)")
 
         if self._llm is None:
             raise RuntimeError(
@@ -641,7 +642,7 @@ class MCPWrapperManager(MCPManager):
 
         # Initialize post-processor if not already initialized
         if self._post_processor is None:
-            self._logger.info("Initializing post-processor for wrapped client")
+            self._logger.debug("Initializing post-processor for wrapped client")
             await self._initialize_post_processor()
 
         # Build standard client first
@@ -656,5 +657,5 @@ class MCPWrapperManager(MCPManager):
         # Wrap the client
         wrapped_client = self._wrap_client(client)
 
-        self._logger.info("Built wrapped client for server: %s", server_name)
+        self._logger.debug("Built wrapped client for server: %s", server_name)
         return wrapped_client
