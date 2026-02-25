@@ -42,6 +42,7 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
         self._original_agent_configs = runner._agent_configs
         self._wrapper_configs = []
         self._has_wrapper = False
+        self._report_path = None  # Track the report file path for appending
 
         # Filter out wrapper configs and track them
         filtered_configs = []
@@ -160,6 +161,8 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
             with open(report_path, "w", encoding="utf-8") as f:
                 f.write(report_str)
             print(f"Report saved to: {report_path}")
+            # Store the path for later appending (critical for parallel runs)
+            self._report_path = str(report_path)
             return str(report_path)
         except Exception as e:
             print(f"Error writing report: {e}")
@@ -213,27 +216,24 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
 
         EXISTING: BenchmarkReport.dump() generates standard markdown report
         THIS IMPLEMENTATION: Adds wrapper configuration and task statistics sections
+
+        Returns:
+            Path to the generated report file.
         """
-        # Call parent dump - this sets up the log file
+        # Call parent dump - this triggers write_to_report which stores self._report_path
         result = super().dump()
 
-        # Check if result is the file path
-        log_file_path = None
-        if result and isinstance(result, str):
-            log_file_path = result
-        else:
-            # Try to find it from the printed output or from benchmark_results
-            # The parent might have printed it to console
-            import glob
-            latest_reports = sorted(glob.glob("log/report_*.md"), key=lambda x: x, reverse=True)
-            if latest_reports:
-                log_file_path = latest_reports[0]
+        # Use the stored report path (set by write_to_report)
+        # This ensures we append to the correct file even when running in parallel
+        log_file_path = self._report_path if self._report_path else result
 
         # Append additional information to the report
         if log_file_path:
             if self._has_wrapper:
                 self._append_wrapper_info(log_file_path)
             self._append_task_statistics(log_file_path)
+
+        return log_file_path
 
     def _append_wrapper_info(self, log_file_path):
         """
@@ -245,11 +245,17 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
         try:
             with open(log_file_path, 'a', encoding='utf-8') as f:
                 f.write("\n\n## Wrapper Configuration\n\n")
-                f.write("Post-processing was enabled for this benchmark.\n\n")
 
                 for wrapper_config in self._wrapper_configs:
                     spec = wrapper_config.get('spec', {})
-                    f.write(f"- **Enabled:** {spec.get('enabled', False)}\n")
+                    enabled = spec.get('enabled', False)
+
+                    if enabled:
+                        f.write("Post-processing was **enabled** for this benchmark.\n\n")
+                    else:
+                        f.write("Post-processing was **disabled** for this benchmark (wrapper config present but not enabled).\n\n")
+
+                    f.write(f"- **Enabled:** {enabled}\n")
                     f.write(f"- **Token Threshold:** {spec.get('token_threshold', 2000)}\n")
 
                     post_llm = spec.get('post_process_llm', {})
