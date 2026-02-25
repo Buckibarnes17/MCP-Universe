@@ -9,8 +9,9 @@
 
 ### 🎉 Latest Updates
 
-> **🚀 [MCP+](#mcpplus-precision-context-management)** - Reduce LLM token costs by up to 75% with intelligent post-processing
-> **🔬 [Deep Research Agent](#deep-research-agent)** - Multi-source research with self-refinement capabilities
+> **🚀 [MCP+](#mcp-precision-context-management-for-mcp-agents)** - Reduce LLM token costs by up to 75% with intelligent post-processing
+>
+> **🔬 [Deep Research Agent](#deep-research-agent-wide--deep-wd-research)** - Multi-source research with self-refinement capabilities
 
 </div>
 
@@ -18,7 +19,7 @@
 
 ## What is MCP-Universe?
 
-MCP-Universe is a comprehensive ecosystem for building, optimizing, and evaluating AI agents that interact with the Model Context Protocol (MCP). Beyond our industry-leading benchmark for real-world MCP server interactions, MCP-Universe provides production-ready tools for agent development including specialized research agents ([**Deep Research Agent**](#deep-research-agent)), intelligent context management ([**MCP+**](#mcpplus-precision-context-management)), and sophisticated orchestration workflows.
+MCP-Universe is a comprehensive ecosystem for building, optimizing, and evaluating AI agents that interact with the Model Context Protocol (MCP). Beyond our industry-leading benchmark for real-world MCP server interactions, MCP-Universe provides production-ready tools for agent development including specialized research agents ([**Deep Research Agent**](#deep-research-agent-wide--deep-wd-research)), intelligent context management ([**MCP+**](#mcp-precision-context-management-for-mcp-agents)), and sophisticated orchestration workflows.
 
 <div align="center">
 
@@ -77,15 +78,11 @@ Even state-of-the-art models show significant limitations in real-world MCP inte
 
 ## What's New
 
-### MCPPlus: Precision Context Management for MCP Agents
-
-<div align="center">
+### MCP+: Precision Context Management for MCP Agents
 
 **🚀 Reduce LLM Token Costs by up to 75% Without Sacrificing Quality**
 
-</div>
-
-MCP tools often return large, verbose outputs that waste your LLM's context window and cost money. **MCPPlus** wraps your MCP clients with intelligent post-processing that extracts only the relevant information before it reaches your LLM.
+MCP tools often return large, verbose outputs that waste your LLM's context window and cost money. **MCP+** wraps your MCP clients with intelligent post-processing that extracts only the relevant information before it reaches your LLM.
 
 #### ✨ Key Features
 
@@ -102,11 +99,7 @@ MCP tools often return large, verbose outputs that waste your LLM's context wind
 
 ### Deep Research Agent: Wide & Deep (W&D) Research
 
-<div align="center">
-
 **🔬 Scale Research Width with Parallel Tool Calls**
-
-</div>
 
 **Feb 11, 2026** — We introduce **Wide & Deep (W&D) research agents** that scale *width* by making more parallel tool calls per turn. This approach improves accuracy on BrowseComp, HLE, and GAIA benchmarks while reducing turns, API cost, and wall-clock time. Our W&D agent with GPT-5-medium reaches **62.2%** on BrowseComp, outperforming GPT-5-high deep research (54.9%).
 
