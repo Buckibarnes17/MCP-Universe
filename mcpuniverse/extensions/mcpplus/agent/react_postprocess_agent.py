@@ -128,7 +128,7 @@ class PostProcessAgent(BaseAgent):
             self._model_name = llm.config.model_name
 
         self._extraction_prompt = DUAL_EXTRACTION_PROMPT
-        self._logger.info("Using default DUAL_EXTRACTION_PROMPT")
+        self._logger.debug("Using default DUAL_EXTRACTION_PROMPT")
 
     async def initialize(self):
         """Initialize agent."""
@@ -425,11 +425,28 @@ class PostProcessAgent(BaseAgent):
                         )
                         continue
                     else:
+                        # Last iteration and both too large - compare total size vs original
                         self._logger.warning(
-                            "Filtered output (%d tokens) larger than original (%d tokens), returning original",
-                            filtered_total_tokens, input_tokens
+                            "⚠️  Last iteration: both outputs too large (direct=%d, code=%d, max=%d). "
+                            "Comparing filtered vs original size...",
+                            direct_tokens, code_output_tokens, max_allowed_tokens
                         )
-                        return tool_output
+                        # Calculate what we'd return if we use filtered output
+                        filtered_output = self._format_output(direct_extraction, code_result, None)
+                        filtered_total_tokens = count_tokens(filtered_output, model=self._model_name)
+
+                        if filtered_total_tokens < input_tokens:
+                            self._logger.info(
+                                "Filtered output (%d tokens) smaller than original (%d tokens), using filtered",
+                                filtered_total_tokens, input_tokens
+                            )
+                            return filtered_output
+                        else:
+                            self._logger.warning(
+                                "Filtered output (%d tokens) larger than original (%d tokens), returning original",
+                                filtered_total_tokens, input_tokens
+                            )
+                            return tool_output
 
                 # Determine which outputs to include based on size
                 use_direct = has_direct and not direct_too_large
@@ -563,18 +580,18 @@ class PostProcessAgent(BaseAgent):
     ) -> str:
         """Format the final output with both results."""
         lines = []
-        lines.append("=" * 60)
+        lines.append("=" * 25)
         lines.append("DUAL EXTRACTION RESULTS")
-        lines.append("=" * 60)
+        lines.append("=" * 25)
         lines.append("")
         lines.append("Two extraction methods were used. You can use either result,")
         lines.append("or combine information from both as appropriate.")
         lines.append("")
 
         # Direct extraction
-        lines.append("-" * 60)
+        lines.append("-" * 25)
         lines.append("DIRECT EXTRACTION:")
-        lines.append("-" * 60)
+        lines.append("-" * 25)
         if direct_extraction:
             lines.append(direct_extraction)
         else:
@@ -582,9 +599,9 @@ class PostProcessAgent(BaseAgent):
         lines.append("")
 
         # Code-based extraction
-        lines.append("-" * 60)
+        lines.append("-" * 25)
         lines.append("CODE-BASED EXTRACTION:")
-        lines.append("-" * 60)
+        lines.append("-" * 25)
         if code_error:
             lines.append(f"ERROR: {code_error}")
         elif code_result:
@@ -593,6 +610,6 @@ class PostProcessAgent(BaseAgent):
             lines.append("(No output)")
         lines.append("")
 
-        lines.append("=" * 60)
+        lines.append("=" * 25)
 
         return "\n".join(lines)
