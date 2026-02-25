@@ -10,8 +10,9 @@ Prerequisites:
 - API keys set in .env file
 """
 import asyncio
-from mcpuniverse.benchmark.runner import BenchmarkRunner
+from mcpuniverse.extensions.mcpplus.benchmark.benchmark_runner import BenchmarkRunnerWithWrapper
 from mcpuniverse.tracer.collectors import MemoryCollector
+from mcpuniverse.callbacks.handlers.vprint import get_vprint_callbacks
 
 
 async def main():
@@ -33,34 +34,50 @@ async def main():
     # Step 2: Load benchmark with wrapper config
     print("\n2. Loading benchmark configuration...")
     # This config includes wrapper configuration
-    benchmark = BenchmarkRunner("examples/configs/benchmark_with_wrapper.yaml")
+    benchmark = BenchmarkRunnerWithWrapper("examples/configs/benchmark_with_wrapper.yaml")
     print("   ✓ Benchmark loaded")
-    print(f"   Agent: {benchmark.config.get('agent', 'N/A')}")
-    print(f"   Tasks: {len(benchmark.config.get('tasks', []))} tasks")
+
+    # Display benchmark info
+    if benchmark._benchmark_configs:
+        first_benchmark = benchmark._benchmark_configs[0]
+        print(f"   Agent: {first_benchmark.agent}")
+        print(f"   Tasks: {len(first_benchmark.tasks)} tasks")
 
     # Step 3: Run the benchmark
     print("\n3. Running benchmark with post-processing...")
     print("   This may take a few minutes depending on task complexity")
     print("-" * 80)
 
+    # Get verbose print callbacks for nice formatting
+    vprint_callbacks = get_vprint_callbacks()
+
     try:
-        results = await benchmark.run(trace_collector=trace_collector)
+        results = await benchmark.run(
+            trace_collector=trace_collector,
+            callbacks=vprint_callbacks
+        )
 
         print("-" * 80)
         print("\n4. Benchmark Results:")
-        print(f"   Total tasks: {len(results)}")
+        print(f"   Total benchmarks: {len(results)}")
 
-        # Display results
+        # Display results (results are BenchmarkResult objects with task_results)
         for i, result in enumerate(results, 1):
-            status = "✓ PASS" if result.success else "✗ FAIL"
-            print(f"   Task {i}: {status}")
-            if hasattr(result, 'task_name'):
-                print(f"           {result.task_name}")
+            print(f"\n   Benchmark {i}:")
+            if hasattr(result, 'task_results') and result.task_results:
+                passed = 0
+                total = len(result.task_results)
+                for task_path, task_data in result.task_results.items():
+                    task_name = task_path.split('/')[-1]
+                    eval_results = task_data.get("evaluation_results", [])
+                    if eval_results and all(r.passed for r in eval_results):
+                        passed += 1
+                        print(f"     ✓ {task_name}")
+                    else:
+                        print(f"     ✗ {task_name}")
 
-        # Calculate success rate
-        success_count = sum(1 for r in results if r.success)
-        success_rate = (success_count / len(results)) * 100 if results else 0
-        print(f"\n   Success Rate: {success_rate:.1f}% ({success_count}/{len(results)})")
+                success_rate = (passed / total) * 100 if total > 0 else 0
+                print(f"   Tasks passed: {passed}/{total} ({success_rate:.1f}%)")
 
     except Exception as e:
         print(f"\n❌ Benchmark failed: {e}")
@@ -73,27 +90,39 @@ async def main():
     # Step 5: Analyze post-processing statistics
     print("\n5. Post-Processing Statistics:")
 
-    # Get wrapper statistics from benchmark
-    if hasattr(benchmark, 'wrapper_manager'):
-        stats = benchmark.wrapper_manager.get_all_postprocessor_stats()
+    # Aggregate statistics from task results
+    if results and results[0].task_results:
+        total_main_tokens = 0
+        total_pp_tokens = 0
+        total_main_cost = 0.0
+        total_pp_cost = 0.0
+        total_pp_iterations = 0
+        task_count = 0
 
-        print(f"   Tool calls processed: {stats['tool_calls_processed']}")
-        print(f"   Total iterations: {stats['total_iterations']}")
-        print(f"   Original tokens: {stats['original_tokens']:,}")
-        print(f"   Filtered tokens: {stats['filtered_tokens']:,}")
-        print(f"   Tokens saved: {stats['total_tokens_reduced']:,}")
+        for result in results:
+            for task_data in result.task_results.values():
+                stats = task_data.get("statistics", {})
+                total_main_tokens += stats.get("main_agent_total_tokens", 0)
+                total_pp_tokens += stats.get("postprocessor_total_tokens", 0)
+                total_main_cost += stats.get("main_agent_total_cost", 0.0)
+                total_pp_cost += stats.get("postprocessor_total_cost", 0.0)
+                total_pp_iterations += stats.get("postprocessor_iterations", 0)
+                task_count += 1
 
-        if stats['original_tokens'] > 0:
-            compression = (stats['total_tokens_reduced'] / stats['original_tokens']) * 100
-            print(f"   Compression rate: {compression:.1f}%")
+        print(f"   Total tasks: {task_count}")
+        print(f"   Main agent tokens: {total_main_tokens:,}")
+        print(f"   Postprocessor tokens: {total_pp_tokens:,}")
+        print(f"   Total tokens: {total_main_tokens + total_pp_tokens:,}")
+        print(f"   Main agent cost: ${total_main_cost:.4f}")
+        print(f"   Postprocessor cost: ${total_pp_cost:.4f}")
+        print(f"   Total cost: ${total_main_cost + total_pp_cost:.4f}")
+        print(f"   Postprocessor iterations: {total_pp_iterations}")
 
-            # Estimate cost savings (assuming $0.03 per 1K tokens for GPT-4)
-            cost_per_1k = 0.03
-            cost_saved = (stats['total_tokens_reduced'] / 1000) * cost_per_1k
-            print(f"   Estimated cost saved: ${cost_saved:.2f}")
+        if total_pp_cost > 0:
+            cost_ratio = (total_pp_cost / (total_main_cost + total_pp_cost)) * 100
+            print(f"   Postprocessor cost ratio: {cost_ratio:.1f}%")
     else:
-        print("   No post-processing statistics available")
-        print("   (Wrapper may not have been used)")
+        print("   No statistics available")
 
     # Step 6: Analyze traces
     print("\n6. Trace Analysis:")
@@ -110,13 +139,20 @@ async def main():
 
             # Count different record types
             record_types = {}
-            for record in trace_records:
-                record_type = record.get('type', 'unknown')
-                record_types[record_type] = record_types.get(record_type, 0) + 1
+            for trace_record in trace_records:
+                # TraceRecord has a 'records' field containing actual execution records
+                if hasattr(trace_record, 'records'):
+                    for record in trace_record.records:
+                        data = record.data if hasattr(record, 'data') else record
+                        record_type = data.get('type', 'unknown')
+                        record_types[record_type] = record_types.get(record_type, 0) + 1
 
-            print("   Record types:")
-            for rtype, count in record_types.items():
-                print(f"     - {rtype}: {count}")
+            if record_types:
+                print("   Record types:")
+                for rtype, count in record_types.items():
+                    print(f"     - {rtype}: {count}")
+            else:
+                print("   No record data available")
         else:
             print("   No trace IDs available")
     else:
@@ -125,9 +161,9 @@ async def main():
     # Step 7: Generate report (optional)
     print("\n7. Generating Report:")
     try:
-        from mcpuniverse.benchmark.report import BenchmarkReport
+        from mcpuniverse.extensions.mcpplus.benchmark.report import BenchmarkReportWithWrapper
 
-        report = BenchmarkReport(benchmark, trace_collector=trace_collector)
+        report = BenchmarkReportWithWrapper(benchmark, trace_collector=trace_collector)
         report_path = report.dump()
         print(f"   ✓ Report saved to: {report_path}")
     except Exception as e:
