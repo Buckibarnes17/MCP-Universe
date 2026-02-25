@@ -192,7 +192,21 @@ def _prepare_wrap_changes(
 
         # Check if this is an SSE server (has url) or stdio server (has command)
         if "url" in server_cfg:
-            # SSE server
+            # Check server type - skip http-type and authenticated SSE servers
+            server_type = server_cfg.get("type", "sse")
+            has_headers = "headers" in server_cfg
+
+            if server_type == "http":
+                print(f"  ⚠️  Skipping '{name}': http-type servers not supported by wrapper")
+                print(f"      (Use the original '{name}' server instead)")
+                continue
+
+            if has_headers:
+                print(f"  ⚠️  Skipping '{name}': SSE servers with authentication not currently supported")
+                print(f"      (Use the original '{name}' server instead)")
+                continue
+
+            # SSE server without authentication
             url = server_cfg.get("url", "")
             if not url:
                 continue
