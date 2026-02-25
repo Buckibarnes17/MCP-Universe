@@ -14,11 +14,8 @@ THIS IMPLEMENTATION:
 """
 # pylint: disable=broad-exception-caught,too-few-public-methods
 import os
-from typing import List, Dict, Optional, Any, TYPE_CHECKING
+from typing import List, Dict, Optional, Any
 from contextlib import AsyncExitStack
-
-if TYPE_CHECKING:
-    from mcpevolve.common.failure_logger import FailureLogger
 
 from mcpuniverse.benchmark.runner import (
     BenchmarkRunner as BaseBenchmarkRunner,
@@ -79,8 +76,7 @@ class BenchmarkRunnerWithWrapper(BaseBenchmarkRunner):
             components: Optional[Dict[str, BaseLLM | Executor]] = None,
             store_folder: str = "",
             overwrite: bool = True,
-            callbacks: Optional[List[BaseCallback]] = None,
-            failure_logger: Optional['FailureLogger'] = None
+            callbacks: Optional[List[BaseCallback]] = None
     ) -> List[BenchmarkResult]:
         """
         Run specified benchmarks with wrapper support.
@@ -92,7 +88,6 @@ class BenchmarkRunnerWithWrapper(BaseBenchmarkRunner):
             store_folder (str): The folder path for storing evaluation results.
             overwrite (bool): Whether to overwrite existing evaluation results.
             callbacks (List[BaseCallback], optional): Callback functions.
-            failure_logger (FailureLogger, optional): Failure logger for tracking postprocessor failures.
 
         Returns:
             List[BenchmarkResult]: Results from all benchmarks.
@@ -109,7 +104,7 @@ class BenchmarkRunnerWithWrapper(BaseBenchmarkRunner):
         # Set trace collector on manager for post-processor tracing
         if trace_collector and hasattr(workflow._mcp_manager, '__dict__'):
             workflow._mcp_manager._trace_collector = trace_collector
-            self._logger.info("Set trace collector on MCP manager for post-processor tracing")
+            self._logger.debug("Set trace collector on MCP manager for post-processor tracing")
 
         store = BenchmarkResultStore(folder=store_folder)
 
@@ -200,7 +195,7 @@ class BenchmarkRunnerWithWrapper(BaseBenchmarkRunner):
                         self._logger.warning("Manager does not have get_postprocessor_trace_id method")
 
                     # Analyze trace to extract metrics (using tracer instead of callbacks)
-                    from mcpevolve.application.tracer_analyzer import TracerAnalyzer
+                    from mcpuniverse.extensions.mcpplus.utils.tracer_analyzer import TracerAnalyzer
                     analyzer = TracerAnalyzer(
                         trace_collector=trace_collector,
                         agent_configs=self._agent_configs
@@ -217,7 +212,8 @@ class BenchmarkRunnerWithWrapper(BaseBenchmarkRunner):
                         if config.get('kind') == 'agent':
                             main_agent_type = config.get('spec', {}).get('type', 'unknown')
                         elif config.get('kind') == 'wrapper':
-                            postprocessor_type = config.get('spec', {}).get('post_processor_type')
+                            if config.get('spec', {}).get('enabled', False):
+                                postprocessor_type = "dual"
 
                     # Convert to statistics dict with separate input/output costs
                     postprocessor_stats = {
