@@ -152,25 +152,38 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
     def _filter_wrapper_configs(self, config: str | dict | List[dict]) -> str | dict | List[dict]:
         """
         Filter out wrapper configurations from config before passing to base class.
+        Also removes 'wrapper' field from agent configs.
 
         Args:
             config (str | dict | List[dict]): Original configuration.
 
         Returns:
-            Filtered configuration without wrapper kinds.
+            Filtered configuration without wrapper kinds and without wrapper references in agents.
         """
         if isinstance(config, str):
             # For file paths, we need to load, filter, and pass as list
             import yaml
             with open(config, "r", encoding="utf-8") as f:
                 objects = list(yaml.safe_load_all(f))
-            return [obj for obj in objects if obj.get("kind") != "wrapper"]
+            filtered = [obj for obj in objects if obj.get("kind") != "wrapper"]
+            # Also remove wrapper references from agent configs
+            for obj in filtered:
+                if obj.get("kind") in ["agent", "workflow"]:
+                    if "wrapper" in obj.get("spec", {}).get("config", {}):
+                        del obj["spec"]["config"]["wrapper"]
+            return filtered
         elif isinstance(config, dict):
             if config.get("kind") == "wrapper":
                 return []
             return config
         else:  # list
-            return [obj for obj in config if obj.get("kind") != "wrapper"]
+            filtered = [obj for obj in config if obj.get("kind") != "wrapper"]
+            # Remove wrapper references
+            for obj in filtered:
+                if obj.get("kind") in ["agent", "workflow"]:
+                    if "wrapper" in obj.get("spec", {}).get("config", {}):
+                        del obj["spec"]["config"]["wrapper"]
+            return filtered
 
     def build(
             self,
@@ -197,7 +210,7 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
             if self._wrapper_llm_ref in self._name2object:
                 llm = self._name2object[self._wrapper_llm_ref]
                 self._mcp_manager.set_llm(llm)
-                self._logger.info(
+                self._logger.debug(
                     "Set post-processor LLM '%s' for wrapper",
                     self._wrapper_llm_ref
                 )
