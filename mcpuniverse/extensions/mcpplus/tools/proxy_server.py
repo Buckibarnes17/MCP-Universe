@@ -86,13 +86,53 @@ class ProxyServer:
         if config_file.exists():
             self._mcp_manager.load_configs(str(config_file))
 
-        # If upstream_command/args provided, register the server dynamically
+        # Register the server dynamically (stdio or SSE)
         # This allows wrapping servers not in server_list.json
-        if self._config.upstream_command and self._config.upstream_args is not None:
+        if self._config.transport == "sse" and self._config.upstream_address:
+            # SSE server with direct URL
+            # Register a minimal config so the server is known to the manager
+            server_config = {
+                "sse": {
+                    "command": self._config.upstream_address,  # Store URL in command field
+                    "args": [],
+                }
+            }
+            try:
+                self._mcp_manager.add_server_config(self._config.upstream_server, server_config)
+            except ValueError:
+                # Server already exists, update it instead
+                self._mcp_manager.update_server_config(self._config.upstream_server, server_config)
+            self._logger.info(
+                "Registered SSE server '%s' with URL: %s",
+                self._config.upstream_server,
+                self._config.upstream_address
+            )
+        elif self._config.upstream_command is not None and self._config.upstream_args is not None:
+            # stdio server
+            # Split command string if it contains arguments
+            # (Cursor config sometimes has "npx -y @playwright/mcp" as single string)
+            import shlex
+            if isinstance(self._config.upstream_command, str) and ' ' in self._config.upstream_command:
+                # Command contains spaces - need to split it
+                if self._config.upstream_args:
+                    # Args already provided separately, just split the command
+                    cmd_parts = shlex.split(self._config.upstream_command)
+                    command = cmd_parts[0]
+                    args = cmd_parts[1:] + self._config.upstream_args
+                else:
+                    # No separate args, split entire command string
+                    cmd_parts = shlex.split(self._config.upstream_command)
+                    command = cmd_parts[0]
+                    args = cmd_parts[1:]
+            else:
+                # Command is just the executable
+                command = self._config.upstream_command
+                args = self._config.upstream_args
+
             server_config = {
                 "stdio": {
-                    "command": self._config.upstream_command,
-                    "args": self._config.upstream_args,
+                    "command": command,
+                    "args": args,
                 }
             }
             # Add env if provided
@@ -106,8 +146,8 @@ class ProxyServer:
             self._logger.info(
                 "Registered upstream server '%s' with command: %s %s",
                 self._config.upstream_server,
-                self._config.upstream_command,
-                " ".join(self._config.upstream_args)
+                command,
+                " ".join(args)
             )
 
         # Resolve post-processing LLM if provided
