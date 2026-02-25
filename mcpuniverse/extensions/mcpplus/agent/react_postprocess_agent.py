@@ -29,13 +29,13 @@ class PostProcessAgentConfig(BaseAgentConfig):
 
     Attributes:
         max_iterations: Maximum iterations if output is empty or code fails.
-        execution_timeout: Timeout for code execution.
+        llm_timeout: Timeout for LLM API calls during post-processing.
         skip_iteration_on_size_failure: If True, immediately return original output when both
             extraction methods produce outputs that are too large. If False, retry iteration.
             Default is False (retry).
     """
     max_iterations: int = 3
-    execution_timeout: int = 10
+    llm_timeout: int = 500
     skip_iteration_on_size_failure: bool = False
 
 
@@ -299,7 +299,7 @@ class PostProcessAgent(BaseAgent):
                 response = await self._llm.generate_async(
                     messages=[{"role": "user", "content": prompt}],
                     tracer=tracer,
-                    timeout=self._config.execution_timeout
+                    timeout=self._config.llm_timeout
                 )
 
                 # Strip markdown code blocks if present

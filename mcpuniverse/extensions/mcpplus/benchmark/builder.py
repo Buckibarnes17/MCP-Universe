@@ -32,14 +32,14 @@ class WrapperSpec(BaseModel):
         enabled (bool): Enable/disable wrapper functionality.
         token_threshold (int): Minimum token count to trigger post-processing.
         post_process_llm (Dict, optional): LLM config for post-processor. Defaults to gpt-5-mini.
-        execution_timeout (int): Max seconds for code execution.
+        llm_timeout (int): Max seconds for LLM API calls during post-processing.
         max_iterations (int): Maximum iterations for post-processor refinement.
         skip_iteration_on_size_failure (bool): Return original if both outputs too large.
     """
     enabled: bool = False
     token_threshold: int = 2000
     post_process_llm: Optional[Dict] = None
-    execution_timeout: int = 10
+    llm_timeout: int = 500
     max_iterations: int = 3
     skip_iteration_on_size_failure: bool = False
 
@@ -140,7 +140,7 @@ class WorkflowBuilderWithWrapper(BaseWorkflowBuilder):
                     enabled=wrapper_spec.enabled,
                     token_threshold=wrapper_spec.token_threshold,
                     post_process_llm=wrapper_spec.post_process_llm,
-                    execution_timeout=wrapper_spec.execution_timeout,
+                    llm_timeout=wrapper_spec.llm_timeout,
                     max_iterations=wrapper_spec.max_iterations,
                     skip_iteration_on_size_failure=wrapper_spec.skip_iteration_on_size_failure
                 )

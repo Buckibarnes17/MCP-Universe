@@ -9,7 +9,7 @@ spec:
   enabled: true                         # Enable post-processing
   token_threshold: 2000                 # Process outputs above 2000 tokens
   max_iterations: 3                     # Max refinement attempts
-  execution_timeout: 10                 # Code execution timeout (seconds)
+  llm_timeout: 500                      # LLM API call timeout (seconds)
   skip_iteration_on_size_failure: false # Retry if both outputs are too large
 
 # Note: post_process_llm defaults to gpt-5-mini if not specified

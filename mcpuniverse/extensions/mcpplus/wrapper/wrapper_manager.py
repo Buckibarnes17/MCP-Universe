@@ -28,7 +28,7 @@ class WrapperConfig:
         enabled (bool): Enable/disable wrapper functionality.
         token_threshold (int): Minimum token count to trigger post-processing.
         post_process_llm (Dict): LLM config for post-processor. Defaults to gpt-5-mini for cost optimization.
-        execution_timeout (int): Max seconds for filter code execution.
+        llm_timeout (int): Max seconds for LLM API calls during post-processing.
         max_iterations (int): Maximum iterations for post-processor to refine code on failures.
         skip_iteration_on_size_failure (bool): If True, immediately return original
             output when both extraction methods produce outputs that are too large. If False, retry iteration.
@@ -37,7 +37,7 @@ class WrapperConfig:
     enabled: bool = False
     token_threshold: int = 2000
     post_process_llm: Dict = None
-    execution_timeout: int = 10
+    llm_timeout: int = 500
     max_iterations: int = 3
     skip_iteration_on_size_failure: bool = False
 
@@ -561,14 +561,14 @@ class MCPWrapperManager(MCPManager):
                 "Use wrapper_config with post_process_llm or ensure agent passes its LLM."
             )
 
-        # Create safe code executor
-        safe_executor = SafeCodeExecutor(timeout=config.execution_timeout)
+        # Create safe code executor with fixed 10 second timeout
+        safe_executor = SafeCodeExecutor(timeout=10)
 
         # Create post-processor config
         post_processor_config = {
             "name": "PostProcessAgent",
             "max_iterations": config.max_iterations,
-            "execution_timeout": config.execution_timeout,
+            "llm_timeout": config.llm_timeout,
             "skip_iteration_on_size_failure": config.skip_iteration_on_size_failure
         }
 

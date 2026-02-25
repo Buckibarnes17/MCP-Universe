@@ -264,7 +264,7 @@ class BenchmarkReportWithWrapper(BaseBenchmarkReport):
                         f.write(f"- **Post-processor LLM:** {model_name}\n")
 
                     f.write(f"- **Max Iterations:** {spec.get('max_iterations', 3)}\n")
-                    f.write(f"- **Execution Timeout:** {spec.get('execution_timeout', 10)}s\n")
+                    f.write(f"- **LLM Timeout:** {spec.get('llm_timeout', 500)}s\n")
                     f.write(f"- **Skip Iteration on Size Failure:** {spec.get('skip_iteration_on_size_failure', False)}\n\n")
 
         except Exception:

@@ -72,7 +72,7 @@ spec:
   token_threshold: 2000
   post_process_llm: llm-postprocess
   max_iterations: 3
-  execution_timeout: 10
+  llm_timeout: 500
 ```
 
 **When to use:** Adding post-processing to any MCP client setup.

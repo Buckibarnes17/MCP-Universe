@@ -178,7 +178,7 @@ WrapperConfig(
     enabled: bool = False,                      # Enable wrapper
     token_threshold: int = 2000,                # Min tokens to trigger processing
     post_process_llm: Dict = gpt-5-mini,       # LLM for post-processing (defaults to gpt-5-mini)
-    execution_timeout: int = 10,                # Code execution timeout (seconds)
+    llm_timeout: int = 500,                     # LLM API call timeout (seconds)
     max_iterations: int = 3,                    # Max refinement iterations
     skip_iteration_on_size_failure: bool = False  # Return original if both outputs too large
 )
@@ -333,7 +333,7 @@ spec:
   enabled: true
   token_threshold: 2000
   max_iterations: 3
-  execution_timeout: 10
+  llm_timeout: 500
   skip_iteration_on_size_failure: false
 
 ---

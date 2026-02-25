@@ -31,7 +31,7 @@ async def main():
         enabled=True,                    # Enable post-processing
         token_threshold=2000,            # Process outputs above 2000 tokens
         max_iterations=3,                # Max refinement attempts
-        execution_timeout=10,            # Code execution timeout
+        llm_timeout=500,                 # LLM API call timeout (seconds)
         skip_iteration_on_size_failure=False  # Retry if outputs are too large
     )
     print(f"   ✓ Token threshold: {wrapper_config.token_threshold}")
@@ -49,7 +49,7 @@ async def main():
     print("\n3. Setting up LLM...")
     llm = LLM(config={
         "type": "openai",
-        "model_name": "gpt-4o-mini"  # Using cheaper model for post-processing
+        "model_name": "gpt-5-mini"  # Using cheaper model for post-processing
     })
     manager.set_llm(llm)
     print("   ✓ LLM configured for post-processing")

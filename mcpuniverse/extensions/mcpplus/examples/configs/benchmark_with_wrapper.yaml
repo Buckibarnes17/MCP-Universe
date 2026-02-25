@@ -29,9 +29,10 @@ kind: wrapper
 spec:
   enabled: true
   token_threshold: 2000
-  post_process_llm: llm-postprocess     # Optional: defaults to gpt-4o-mini if omitted
+  post_process_llm:
+    llm: llm-postprocess     # Optional: defaults to gpt-5-mini if omitted
   max_iterations: 3
-  execution_timeout: 10
+  llm_timeout: 500
   skip_iteration_on_size_failure: false
 
 ---
