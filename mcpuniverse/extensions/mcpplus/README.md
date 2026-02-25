@@ -1,6 +1,6 @@
 # MCPPlus
 
-> Intelligent post-processing for MCP tool outputs. Reduce token costs by up to 70%.
+> Intelligent post-processing for MCP tool outputs. Reduce token costs by up to 75%.
 
 [![MCP-Universe](https://img.shields.io/badge/MCP-Universe-blue)]()
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)]()
@@ -32,10 +32,13 @@ mcp-build-plus --mcp-config ~/.cursor/mcp.json
 mcp-build-plus --mcp-config ~/.cursor/mcp.json --servers github
 
 # Adjust token threshold (MCP+ invoked for responses beyond this length)
-mcp-build-plus --mcp-config ~/.cursor/mcp.json --token-threshold 300
+mcp-build-plus --mcp-config ~/.cursor/mcp.json --token-threshold 500
+
+# Add MCP Server specific token threshold
+mcp-build-plus --mcp-config ~/.cursor/mcp.json --servers playwright --token-threshold 2000
 
 # Use a different/cheaper model (default: gpt-4.1)
-mcp-build-plus --mcp-config ~/.cursor/mcp.json --llm-model gpt-4.1-mini
+mcp-build-plus --mcp-config ~/.cursor/mcp.json --llm-model gpt-5-mini
 
 # Use Gemini instead of OpenAI
 mcp-build-plus --mcp-config ~/.cursor/mcp.json \
@@ -74,13 +77,12 @@ MCPPlus is a post-processing extension for MCP-Universe that intelligently filte
 ### The Problem
 
 MCP tools often return large, verbose outputs (web pages, API responses, file contents). Sending these directly to your LLM:
+- 🧠 **Wastes context** - LLM sees irrelevant data, context is blocked through all agent iterations
 - 💸 **Costs money** - Large context windows are expensive
-- ⏱️ **Slows responses** - More tokens = slower generation
-- 🧠 **Wastes context** - LLM sees irrelevant data
 
 ### The Solution
 
-MCPPlus wraps your MCP clients and uses a **dual post-processing agent** to:
+MCPPlus wraps your MCP clients and uses a **dual post-processing agent** to perform:
 1. **Direct Extraction** - LLM extracts key information directly as text
 2. **Code Generation** - LLM generates Python code to filter/parse data
 3. **Best of Both** - Returns both methods for robustness
@@ -111,7 +113,7 @@ manager = MCPWrapperManager(
 
 # Your LLM
 from mcpuniverse.llm import LLM
-llm = LLM(config={"model_name": "gpt-4"})
+llm = LLM(config={"model_name": "gpt-5-mini"})
 manager.set_llm(llm)
 
 # Build wrapped client
@@ -205,7 +207,7 @@ result = await client.execute_tool(
 ```
 ┌─────────────┐
 │   Agent     │
-│   (GPT-4)   │
+│   (GPT-5)   │
 └──────┬──────┘
        │ Uses tool with expected_info
        ▼
@@ -328,10 +330,19 @@ pytest tests/extensions/mcpplus/utils/
 MCPPlus integrates seamlessly with MCP-Universe benchmarks. Add wrapper configuration to your benchmark YAML:
 
 ```yaml
+kind: llm
+spec:
+  name: postprocessor-agent
+  type: openai
+  config:
+    model_name: gpt-5-mini
+
+---
 kind: wrapper
 spec:
   enabled: true
   token_threshold: 2000
+  post_process_llm: postprocessor-agent
   max_iterations: 3
   llm_timeout: 500
   skip_iteration_on_size_failure: false
@@ -339,10 +350,10 @@ spec:
 ---
 kind: llm
 spec:
-  name: llm-1
+  name: main-agent
   type: openai
   config:
-    model_name: gpt-4
+    model_name: gpt-5
 
 ---
 kind: agent
@@ -350,7 +361,7 @@ spec:
   name: ReAct-agent
   type: react
   config:
-    llm: llm-1
+    llm: main-agent
     instruction: You are a helpful assistant.
     servers:
       - name: your-mcp-server
@@ -461,18 +472,11 @@ MCPPlus is part of MCP-Universe. Check
 
 ---
 
-## 📄 License
-
-[Add license info]
-
----
-
 ## 🔗 Links
 
 - [MCP-Universe Main Repository](../../../)
 - [MCP-Universe Documentation](../../../README.md)
 - [MCP Specification](https://spec.modelcontextprotocol.io)
-- [Research Paper](https://arxiv.org/abs/2508.14704)
 
 ---
 
@@ -508,15 +512,18 @@ print(f"Average compression: {stats['tokens_reduced'] / stats['original_tokens']
 
 ## ❓ FAQ
 
-**Q: Does MCPPlus work with all MCP servers?**
-A: Yes! MCPPlus wraps the MCP client layer, so it works with any MCP server regardless of implementation.
+**Q: Does MCP+ work with all MCP servers?**
+A: Yes! MCP+ wraps the MCP client layer, so it works with any MCP server regardless of implementation.
+
+**Q: Does MCP+ work with all kinds of agents?**
+A: Yes! MCP+ only intercepts the tool calls, so any agent using the standard MCP tool calls can use it.
 
 **Q: What if post-processing fails?**
-A: MCPPlus always falls back to the original tool output. Your agent never receives an error due to post-processing failure.
+A: MCP+ always falls back to the original tool output. Your agent never receives an error due to post-processing failure.
 
 **Q: Can I use a different LLM for post-processing?**
 A: Yes! Post-processing defaults to `gpt-5-mini` for cost optimization. You can override this by setting `post_process_llm` in WrapperConfig to use a different model.
 
 **Q: How much does post-processing cost?**
-A: Each post-processing call uses ~1000-2000 tokens (prompt + response). However, if you save 10,000+ tokens on the main agent call, the net savings are substantial.
+A: Each post-processing call uses ~1000-2000 tokens (prompt + response). However, if you save 10,000+ tokens on the main agent call, the net savings are substantial. See https://mcp-plus.github.io/#results for a detailed comparison of the input costs.
 

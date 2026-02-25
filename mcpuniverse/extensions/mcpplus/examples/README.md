@@ -1,6 +1,6 @@
-# MCPPlus Examples
+# MCP+ Examples
 
-This directory contains practical examples demonstrating how to use MCPPlus with MCP-Universe.
+This directory contains practical examples demonstrating how to use MCP+ with MCP-Universe.
 
 ## Quick Start
 
@@ -35,7 +35,7 @@ python examples/basic_wrapper.py
 ### 2. Benchmark Integration
 **File:** [benchmark_integration.py](benchmark_integration.py)
 
-Run MCP-Universe benchmarks with MCPPlus post-processing enabled.
+Run MCP-Universe benchmarks with MCP+ post-processing enabled.
 
 ```bash
 python examples/benchmark_integration.py
@@ -63,7 +63,7 @@ spec:
   name: llm-postprocess
   type: openai
   config:
-    model_name: gpt-4o-mini
+    model_name: gpt-5-mini
 
 ---
 kind: wrapper
@@ -100,7 +100,7 @@ spec:
   name: llm-postprocess        # New: cheaper LLM for filtering
   type: openai
   config:
-    model_name: gpt-4o-mini
+    model_name: gpt-5-mini
 
 ---
 kind: wrapper                  # New: enable post-processing
@@ -115,7 +115,7 @@ Everything else stays the same!
 
 ## Understanding `expected_info`
 
-MCPPlus adds an `expected_info` parameter to all tool calls. The quality of post-processing depends on clear descriptions.
+MCPPlus adds an `expected_info` parameter to all tool calls. The quality of post-processing depends on clear descriptions.  
 
 ### Good Examples
 
@@ -159,10 +159,10 @@ MCPPlus adds an `expected_info` parameter to all tool calls. The quality of post
 
 ```yaml
 # Main agent: expensive but capable
-llm-main: gpt-4o
+llm-main: gpt-5
 
 # Post-processor: cheap and sufficient
-llm-postprocess: gpt-4o-mini  # 10x cheaper!
+llm-postprocess: gpt-5-mini 
 ```
 
 ### 2. Set Appropriate Threshold
@@ -223,7 +223,7 @@ The `SafeCodeExecutor` blocks dangerous operations. If legitimate code fails:
 ### Basic Wrapper
 
 ```bash
-# Navigate to MCPPlus directory
+# Navigate to MCP+ directory
 cd mcpuniverse/extensions/mcpplus
 
 # Run example
@@ -247,7 +247,7 @@ python examples/benchmark_integration.py
 1. **Modify examples** - Replace server names and tasks with your own
 2. **Try different LLMs** - Test various post-processing models
 3. **Tune thresholds** - Find optimal token threshold for your use case
-4. **Create benchmarks** - Add MCPPlus to your existing benchmark configs
+4. **Create benchmarks** - Add MCP+ to your existing benchmark configs
 
 ---
 
@@ -255,4 +255,3 @@ python examples/benchmark_integration.py
 
 - 📖 [MCPPlus Documentation](../README.md)
 - 🌐 [MCP-Universe Docs](../../../../README.md)
-- 💬 [Discord Community](https://discord.gg/t9tU77GF)
