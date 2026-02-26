@@ -83,7 +83,6 @@ MCP tools often return large, verbose outputs that waste your LLM's context wind
 - **💰 Massive Cost Reduction**: 50-75% token savings on tool outputs
 - **⚡ Zero Code Changes**: Drop-in replacement for standard MCP clients
 
-<div align="center">
 
 **📚 [Learn More at mcp-plus.github.io →](https://mcp-plus.github.io)**
 
