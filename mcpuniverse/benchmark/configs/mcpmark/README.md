@@ -8,6 +8,18 @@ MCPMark is a comprehensive, stress-testing MCP benchmark designed to evaluate mo
 
 **Original Project**: https://github.com/eval-sys/mcpmark
 
+## Benchmark Results Alignment
+
+MCP-Universe runs MCPMark with the **ReAct** agent. Below is a comparison of scores (MCPMark reported setup vs. MCP-Universe tested with ReAct + gpt-4.1):
+
+| Category     | MCPMark Reported (MCPMark-Agent + gpt-4.1) | MCP Universe Tested (ReAct + gpt-4.1) |
+| ------------ | ------------------------------------------ | ------------------------------------- |
+| **FileSystem** | 12.50                                    | **16.70**                              |
+| **Github**     | 7.61                                     | **8.70**                               |
+| **Notion**     | 6.25                                     | **7.14**                               |
+| **Playwright** | 8.00                                     | 8.00                                   |
+| **Postgres**   | 4.76                                     | 4.76                                   |
+
 ## Environment Preparation
 
 Before running MCPMark tasks, you need to set up the corresponding service environments. 
@@ -582,7 +594,38 @@ Password: password
 
 ## Running MCPMark Tasks
 
-All MCPMark tasks have been migrated to the MCP-Universe framework and can be run using the standard test files:
+All MCPMark tasks have been migrated to the MCP-Universe framework. Run domain-specific benchmarks as follows.
+
+### Execution
+
+#### Running Individual Benchmarks
+
+Set `PYTHONPATH` and run each domain test from the **project root**:
+
+```bash
+# Set Python path (required)
+export PYTHONPATH=.
+
+# Filesystem
+python tests/benchmark/mcpmark/test_benchmark_mcpmark_filesystem.py
+
+# GitHub
+python tests/benchmark/mcpmark/test_benchmark_mcpmark_github.py
+
+# Notion
+python tests/benchmark/mcpmark/test_benchmark_mcpmark_notion.py
+
+# Playwright
+python tests/benchmark/mcpmark/test_benchmark_mcpmark_playwright.py
+
+# Playwright WebArena (requires WebArena Docker environments)
+python tests/benchmark/mcpmark/test_benchmark_mcpmark_playwright_webarena.py
+
+# PostgreSQL
+python tests/benchmark/mcpmark/test_benchmark_mcpmark_postgres.py
+```
+
+Each test uses the corresponding config under `mcpuniverse/benchmark/configs/mcpmark/configs/`.
 
 ## Task Statistics
 
