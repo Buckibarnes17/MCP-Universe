@@ -1,4 +1,4 @@
-# MCPPlus
+# MCP+
 
 > Intelligent post-processing for MCP tool outputs. Reduce token costs by up to 75%.
 
@@ -23,7 +23,7 @@ mcp-build-plus --mcp-config ~/.cursor/mcp.json
 # (e.g., github → github-plus)
 ```
 
-**Restart Cursor/Claude Code.** Your servers now have `-plus` versions with intelligent filtering.
+You must **Restart Cursor/Claude Code.** Your servers now have `-plus` versions with intelligent filtering.
 
 ### CLI Options
 
