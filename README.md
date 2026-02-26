@@ -9,11 +9,11 @@
 
 ### 🎉 Latest Updates
 
-> **📊 [MCPMark Benchmark](#mcpmark-benchmark)** - MCP-Universe now supports evaluating the MCPMark tasks
+> **📊 [MCPMark Evaluation](#mcpmark-benchmark)** - MCP-Universe now supports evaluating the MCPMark tasks
 >
-> **🚀 [MCP+](#mcp-precision-context-management-for-mcp-agents)** - Reduce LLM token costs by up to 75% with intelligent post-processing
+> **🚀 [MCP+](#mcp-precision-context-management-for-mcp-agents)** - Agentic wrapper on MCP clients which reduce token costs by up to 75% 
 >
-> **🔬 [Deep Research Agent](#deep-research-agent-wide--deep-wd-research)** - Multi-source research with self-refinement capabilities
+> **🔬 [Deep Research Agent](#deep-research-agent-wide--deep-wd-research)** - Scale the Width of Deep Research Agents with parallel tool calling
 
 </div>
 
@@ -35,28 +35,6 @@ MCP-Universe is a comprehensive ecosystem for building, optimizing, and evaluati
 - 🔧 **Large, unfamiliar tool spaces** with diverse MCP servers
 - 🌍 **Real-world data sources** and live environments
 - ⚡ **Dynamic evaluation** with time-sensitive ground truth
-
-🎉 **[NEW] MCPMark Benchmark:** MCP-Universe now supports evaluating the MCPMark benchmark for comprehensive MCP agent testing and benchmarking.
-
-🎉 **[NEW] Context Management:** MCP+ provides intelligent post-processing capabilities that address the token cost and context window challenges of verbose MCP tool outputs:
-
-- 💰 **Cost optimization** through smart filtering and extraction (50-75% token reduction)
-
-🎉 **[NEW] Deep Research Agents:** MCP-Universe includes Wide & Deep (W&D) research agents that scale width through parallel tool calls:
-
-- 🔬 **Enhanced accuracy** on research benchmarks (62.2% on BrowseComp)
-- ⚡ **Reduced latency** through parallel execution
-
-## Benchmark Performance Highlights
->>>>>>> 942a668 (update readme)
-
-Even state-of-the-art models show significant limitations in real-world MCP interactions:
-
-- 🥇 **GPT-5**: 43.72% success rate
-- 🥈 **Grok-4**: 33.33% success rate  
-- 🥉 **Claude-4.0-Sonnet**: 29.44% success rate
-
-*This highlights the challenging nature of real-world MCP server interactions and substantial room for improvement in current LLM agents.*
 
 
 ## Table of Contents
@@ -90,7 +68,7 @@ MCP-Universe now supports evaluating the **MCPMark** benchmark, enabling compreh
 
 **📚 Resources:**
 - [How to run MCPMark](mcpuniverse/benchmark/configs/mcpmark/README.md#running-mcpmark-tasks)
-- [MCPMark Alignment Scores](mcpuniverse/benchmark/configs/mcpmark/README.md#benchmark-results-alignment)
+- [Evaluation Scores](mcpuniverse/benchmark/configs/mcpmark/README.md#benchmark-results-alignment)
 
 ---
 
