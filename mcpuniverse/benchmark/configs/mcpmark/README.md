@@ -4,13 +4,13 @@ This directory contains the integration of [MCPMark](https://github.com/eval-sys
 
 ## Overview
 
-MCPMark is a comprehensive, stress-testing MCP benchmark designed to evaluate model and agent capabilities in real-world MCP use. This integration allows you to run all MCPMark tasks within the MCP-Universe framework.
+MCPMark is a MCP benchmark designed to evaluate model and agent capabilities in real-world MCP use. This integration allows you to run all MCPMark tasks within the MCP-Universe framework.
 
 **Original Project**: https://github.com/eval-sys/mcpmark
 
-## Benchmark Results Alignment
+## Benchmark Results 
 
-MCP-Universe runs MCPMark with the **ReAct** agent. Below is a comparison of scores (MCPMark reported setup vs. MCP-Universe tested with ReAct + gpt-4.1):
+Below is a comparison of scores between MCPMark reported setup vs. MCP-Universe tested with ReAct + gpt-4.1:
 
 | Category     | MCPMark Reported (MCPMark-Agent + gpt-4.1) | MCP Universe Tested (ReAct + gpt-4.1) |
 | ------------ | ------------------------------------------ | ------------------------------------- |
