@@ -115,19 +115,22 @@ class OpenAIModel(BaseLLM):
                     self.config.model_name = "gpt-5"
 
                 if response_format is None:
-                    chat = client.chat.completions.create(
-                        messages=messages,
-                        model=self.config.model_name,
-                        temperature=self.config.temperature,
-                        top_p=self.config.top_p,
-                        frequency_penalty=self.config.frequency_penalty,
-                        presence_penalty=self.config.presence_penalty,
-                        max_completion_tokens=self.config.max_completion_tokens,
-                        seed=self.config.seed,
-                        timeout=self.config.timeout,
-                        parallel_tool_calls=self.config.parallel_tool_calls,
-                        **kwargs
-                    )
+                    # Only include parallel_tool_calls if tools are provided
+                    params = {
+                        "messages": messages,
+                        "model": self.config.model_name,
+                        "temperature": self.config.temperature,
+                        "top_p": self.config.top_p,
+                        "frequency_penalty": self.config.frequency_penalty,
+                        "presence_penalty": self.config.presence_penalty,
+                        "max_completion_tokens": self.config.max_completion_tokens,
+                        "seed": self.config.seed,
+                        "timeout": self.config.timeout,
+                    }
+                    if 'tools' in kwargs:
+                        params["parallel_tool_calls"] = self.config.parallel_tool_calls
+                    params.update(kwargs)
+                    chat = client.chat.completions.create(**params)
                     # If tools are provided, return the entire response object
                     # so the caller can handle both content and tool_calls
                     if 'tools' in kwargs:
@@ -135,19 +138,22 @@ class OpenAIModel(BaseLLM):
                     # For backward compatibility, return just content when no tools
                     return chat.choices[0].message.content
 
-                chat = client.beta.chat.completions.parse(
-                    messages=messages,
-                    model=self.config.model_name,
-                    temperature=self.config.temperature,
-                    top_p=self.config.top_p,
-                    frequency_penalty=self.config.frequency_penalty,
-                    presence_penalty=self.config.presence_penalty,
-                    max_completion_tokens=self.config.max_completion_tokens,
-                    seed=self.config.seed,
-                    response_format=response_format,
-                    parallel_tool_calls=self.config.parallel_tool_calls,
-                    **kwargs
-                )
+                # Only include parallel_tool_calls if tools are provided
+                params = {
+                    "messages": messages,
+                    "model": self.config.model_name,
+                    "temperature": self.config.temperature,
+                    "top_p": self.config.top_p,
+                    "frequency_penalty": self.config.frequency_penalty,
+                    "presence_penalty": self.config.presence_penalty,
+                    "max_completion_tokens": self.config.max_completion_tokens,
+                    "seed": self.config.seed,
+                    "response_format": response_format,
+                }
+                if 'tools' in kwargs:
+                    params["parallel_tool_calls"] = self.config.parallel_tool_calls
+                params.update(kwargs)
+                chat = client.beta.chat.completions.parse(**params)
                 # If tools are provided, return the entire response object
                 # so the caller can handle both content and tool_calls
                 if 'tools' in kwargs:

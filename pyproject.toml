@@ -93,6 +93,9 @@ dashboard = [
     "gradio>=5.42.0",
 ]
 
+[project.scripts]
+mcp-build-plus = "mcpuniverse.extensions.mcpplus.tools.wrap_mcp_config:main"
+
 [project.urls]
 Homepage = "https://github.com/SalesforceAIResearch/MCP-Universe"
 Repository = "https://github.com/SalesforceAIResearch/MCP-Universe"

@@ -7,13 +7,19 @@
 [![Leaderboard](https://img.shields.io/badge/Leaderboard-Results-FF6B35?style=for-the-badge&logo=chartdotjs&logoColor=white)](https://mcp-universe.github.io/#results)
 [![Discord](https://img.shields.io/badge/Discord-Join_Community-5865F2?style=for-the-badge&logo=discord&logoColor=white)](https://discord.gg/t9tU77GF)
 
+### 🎉 Latest Updates
+
+> **🚀 [MCP+](#mcp-precision-context-management-for-mcp-agents)** - Reduce LLM token costs by up to 75% with intelligent post-processing
+>
+> **🔬 [Deep Research Agent](#deep-research-agent-wide--deep-wd-research)** - Multi-source research with self-refinement capabilities
+
 </div>
 
 ---
 
 ## What is MCP-Universe?
 
-MCP-Universe is a comprehensive framework designed for developing, testing, and benchmarking AI agents. It offers a robust platform for building and evaluating both AI agents and LLMs across a wide range of task environments. The framework also supports seamless integration with external MCP servers and facilitates sophisticated agent orchestration workflows.
+MCP-Universe is a comprehensive ecosystem for building, optimizing, and evaluating AI agents that interact with the Model Context Protocol (MCP). Beyond our industry-leading benchmark for real-world MCP server interactions, MCP-Universe provides production-ready tools for agent development including specialized research agents ([**Deep Research Agent**](#deep-research-agent-wide--deep-wd-research)), intelligent context management ([**MCP+**](#mcp-precision-context-management-for-mcp-agents)), and sophisticated orchestration workflows.
 
 <div align="center">
 
@@ -21,19 +27,24 @@ MCP-Universe is a comprehensive framework designed for developing, testing, and 
 
 </div>
 
-Unlike existing benchmarks that rely on overly simplistic tasks, MCP-Universe addresses critical gaps by evaluating LLMs in **real-world scenarios** through interaction with actual MCP servers, capturing real application challenges such as:
+**Benchmarking:** Unlike existing benchmarks that rely on overly simplistic tasks, MCP-Universe addresses critical gaps by evaluating LLMs in **real-world scenarios** through interaction with actual MCP servers, capturing real application challenges such as:
 
 - 🎯 **Long-horizon reasoning** across multi-step tasks
-- 🔧 **Large, unfamiliar tool spaces** with diverse MCP servers  
+- 🔧 **Large, unfamiliar tool spaces** with diverse MCP servers
 - 🌍 **Real-world data sources** and live environments
 - ⚡ **Dynamic evaluation** with time-sensitive ground truth
 
-<h2 style="color: red;">News</h2>
+🎉 **[NEW] Context Management:** MCP+ provides intelligent post-processing capabilities that address the token cost and context window challenges of verbose MCP tool outputs:
 
-- **Feb 11, 2026 — Wide & Deep (W&D) research agents** — We scale *width* by making more parallel tool calls per turn. This improves accuracy on BrowseComp, HLE, and GAIA while reducing turns, API cost, and wall-clock time. Our W&D agent with GPT-5-medium reaches **62.2%** on BrowseComp, outperforming GPT-5-high deep research (54.9%).  
-  [Paper](https://lnkd.in/gT5Vi_gz) · [Website](https://lnkd.in/ga9YzCHp) · [Code](https://lnkd.in/gejEP3Pk) · [Run W&D in this repo](mcpuniverse/benchmark/configs/deepresearch/README.md)
-  
-## Performance Highlights
+- 💰 **Cost optimization** through smart filtering and extraction (50-75% token reduction)
+
+🎉 **[NEW] Deep Research Agents:** MCP-Universe includes Wide & Deep (W&D) research agents that scale width through parallel tool calls:
+
+- 🔬 **Enhanced accuracy** on research benchmarks (62.2% on BrowseComp)
+- ⚡ **Reduced latency** through parallel execution
+
+## Benchmark Performance Highlights
+>>>>>>> 942a668 (update readme)
 
 Even state-of-the-art models show significant limitations in real-world MCP interactions:
 
@@ -46,7 +57,7 @@ Even state-of-the-art models show significant limitations in real-world MCP inte
 
 ## Table of Contents
 
-- [News](#news)
+- [What's New](#whats-new)
 - [Architecture Overview](#architecture-overview)
 - [Getting Started](#getting-started)
     - [Prerequisites](#prerequisites)
@@ -64,6 +75,41 @@ Even state-of-the-art models show significant limitations in real-world MCP inte
     - [Task definition](#task-definition)
     - [Benchmark definition](#benchmark-definition)
 - [Citation](#citation)
+
+## What's New
+
+### MCP+: Precision Context Management for MCP Agents
+
+**🚀 Reduce LLM Token Costs by up to 75% Without Sacrificing Quality**
+
+MCP tools often return large, verbose outputs that waste your LLM's context window and cost money. **MCP+** wraps your MCP clients with intelligent post-processing that extracts only the relevant information before it reaches your LLM.
+
+#### ✨ Key Features
+
+- **💰 Massive Cost Reduction**: 50-75% token savings on tool outputs
+- **⚡ Zero Code Changes**: Drop-in replacement for standard MCP clients
+
+<div align="center">
+
+**📚 [Learn More at mcp-plus.github.io →](https://mcp-plus.github.io)**
+
+</div>
+
+---
+
+### Deep Research Agent: Wide & Deep (W&D) Research
+
+**🔬 Scale Research Width with Parallel Tool Calls**
+
+**Feb 11, 2026** — We introduce **Wide & Deep (W&D) research agents** that scale *width* by making more parallel tool calls per turn. This approach improves accuracy on BrowseComp, HLE, and GAIA benchmarks while reducing turns, API cost, and wall-clock time. Our W&D agent with GPT-5-medium reaches **62.2%** on BrowseComp, outperforming GPT-5-high deep research (54.9%).
+
+**📚 Resources:**
+- [Paper](https://lnkd.in/gT5Vi_gz)
+- [Website](https://lnkd.in/ga9YzCHp)
+- [Code](https://lnkd.in/gejEP3Pk)
+- [Run W&D in this repo](mcpuniverse/benchmark/configs/deepresearch/README.md)
+
+---
 
 ## Architecture Overview
 
