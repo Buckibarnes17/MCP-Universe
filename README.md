@@ -1,5 +1,3 @@
-<div align="center">
-
 # <img src="assets/icon.png" alt="MCP-Universe" width="23" height="23"> MCP-Universe
 
 [![Paper](https://img.shields.io/badge/Paper-arXiv:2508.14704-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white)](https://arxiv.org/abs/2508.14704)
