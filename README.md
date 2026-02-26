@@ -95,10 +95,9 @@ MCP tools often return large, verbose outputs that waste your LLM's context wind
 **Feb 11, 2026** — We introduce **Wide & Deep (W&D) research agents** that scale *width* by making more parallel tool calls per turn. This approach improves accuracy on BrowseComp, HLE, and GAIA benchmarks while reducing turns, API cost, and wall-clock time. Our W&D agent with GPT-5-medium reaches **62.2%** on BrowseComp, outperforming GPT-5-high deep research (54.9%).
 
 **📚 Resources:**
-- [Paper](https://lnkd.in/gT5Vi_gz)
-- [Website](https://lnkd.in/ga9YzCHp)
-- [Code](https://lnkd.in/gejEP3Pk)
-- [Run W&D in this repo](mcpuniverse/benchmark/configs/deepresearch/README.md)
+- [Paper](https://arxiv.org/pdf/2602.07359)
+- [Website](https://xqlin98.github.io/wide-deep-research-agent/)
+- [Code](mcpuniverse/benchmark/configs/deepresearch/README.md)
 
 ---
 
