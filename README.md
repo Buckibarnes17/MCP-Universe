@@ -9,6 +9,8 @@
 
 ### 🎉 Latest Updates
 
+> **📊 [MCPMark Benchmark](#mcpmark-benchmark)** - MCP-Universe now supports evaluating the MCPMark tasks
+>
 > **🚀 [MCP+](#mcp-precision-context-management-for-mcp-agents)** - Reduce LLM token costs by up to 75% with intelligent post-processing
 >
 > **🔬 [Deep Research Agent](#deep-research-agent-wide--deep-wd-research)** - Multi-source research with self-refinement capabilities
@@ -33,6 +35,8 @@ MCP-Universe is a comprehensive ecosystem for building, optimizing, and evaluati
 - 🔧 **Large, unfamiliar tool spaces** with diverse MCP servers
 - 🌍 **Real-world data sources** and live environments
 - ⚡ **Dynamic evaluation** with time-sensitive ground truth
+
+🎉 **[NEW] MCPMark Benchmark:** MCP-Universe now supports evaluating the MCPMark benchmark for comprehensive MCP agent testing and benchmarking.
 
 🎉 **[NEW] Context Management:** MCP+ provides intelligent post-processing capabilities that address the token cost and context window challenges of verbose MCP tool outputs:
 
@@ -77,6 +81,18 @@ Even state-of-the-art models show significant limitations in real-world MCP inte
 - [Citation](#citation)
 
 ## What's New
+
+### MCPMark Benchmark
+
+**📊 Evaluate MCP Agents with MCPMark**
+
+MCP-Universe now supports evaluating the **MCPMark** benchmark, enabling comprehensive testing and benchmarking of MCP agents. You can run MCPMark evaluations directly within the MCP-Universe framework to assess agent performance on MCP tasks.
+
+**📚 Resources:**
+- [How to run MCPMark](mcpuniverse/benchmark/configs/mcpmark/README.md#running-mcpmark-tasks)
+- [MCPMark Alignment Scores](mcpuniverse/benchmark/configs/mcpmark/README.md#benchmark-results-alignment)
+
+---
 
 ### MCP+: Precision Context Management for MCP Agents
 
