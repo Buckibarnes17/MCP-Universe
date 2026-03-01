@@ -28,11 +28,22 @@ from dataclasses import dataclass, field
 import asyncio
 import uuid
 
-import ray
-from vllm import AsyncLLMEngine, SamplingParams
-from vllm.engine.arg_utils import AsyncEngineArgs
-from vllm.inputs import TokensPrompt
 from loguru import logger
+
+try:
+    import ray
+except ImportError:
+    ray = None
+
+try:
+    from vllm import AsyncLLMEngine as _AsyncLLMEngine, SamplingParams
+    from vllm.engine.arg_utils import AsyncEngineArgs
+    from vllm.inputs import TokensPrompt
+except ImportError:
+    _AsyncLLMEngine = None
+    SamplingParams = None
+    AsyncEngineArgs = None
+    TokensPrompt = None
 
 
 @dataclass
@@ -75,7 +86,7 @@ class AsyncVLLMEngine:
     ):
         """
         Initialize the vLLM engine wrapper.
-        
+
         Args:
             model_path: Path to the model (HuggingFace model ID or local path)
             tensor_parallel_size: Number of GPUs for tensor parallelism
@@ -85,6 +96,11 @@ class AsyncVLLMEngine:
             gpu_memory_utilization: GPU memory utilization ratio
             **engine_args: Additional vLLM engine arguments
         """
+        if _AsyncLLMEngine is None:
+            raise ImportError(
+                "vllm is required for AsyncVLLMEngine. "
+                "Install with: pip install mcpuniverse[vllm]"
+            )
         self.config = VLLMEngineConfig(
             model_path=model_path,
             tensor_parallel_size=tensor_parallel_size,
@@ -117,7 +133,7 @@ class AsyncVLLMEngine:
             **self.config.engine_args
         )
 
-        self.engine = AsyncLLMEngine.from_engine_args(engine_args)
+        self.engine = _AsyncLLMEngine.from_engine_args(engine_args)
 
         # Get max model length from engine if not specified
         if self.max_model_len is None:
@@ -358,6 +374,12 @@ def create_ray_vllm_actor(
             request_id="123",
         ))
     """
+    if ray is None:
+        raise ImportError(
+            "ray is required for create_ray_vllm_actor. "
+            "Install with: pip install mcpuniverse[vllm]"
+        )
+
     @ray.remote(num_cpus=1)
     class RayVLLMServer(AsyncVLLMEngine):
         """Ray actor wrapping AsyncVLLMEngine for distributed deployment."""

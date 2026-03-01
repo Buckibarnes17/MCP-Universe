@@ -11,6 +11,9 @@ from .engine import AsyncVLLMEngine, AsyncVLLMBackend, VLLMEngineConfig, create_
 from .manager import TokenTrajectoryManager, TokenTrajectory, TokenSegment
 from .wrapper import TITOLLMWrapper, TITOLLMConfig
 
+# Re-export for convenience; engine classes are always importable but
+# raise ImportError at instantiation if vllm/ray are not installed.
+
 __all__ = [
     "AsyncVLLMEngine",
     "AsyncVLLMBackend",
