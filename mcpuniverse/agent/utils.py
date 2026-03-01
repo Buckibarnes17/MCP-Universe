@@ -355,7 +355,7 @@ def render_harmony_chain(
     rounds: List[Dict[str, Any]],
     system_identity: str = "You are ChatGPT, a large language model trained by OpenAI.",
     knowledge_cutoff: str = "2024-06",
-    reasoning: str = "high",
+    reasoning: str = "low",
     tools_namespace_ts: Optional[str] = "",  # string from render_tools_namespace(...)
 ) -> str:
     """
@@ -674,4 +674,205 @@ def parse_harmony(text: str) -> Dict[str, Any]:
         "tool_call": parse_tool_call(text),
         "final": parse_final(text),  # dict/list or None
         "raw": text,
+    }
+
+
+# ========== Qwen3 Chat Template Functions ==========
+
+def render_qwen3_react_prompt(
+    system_instruction: str,
+    tools_description: str,
+    user_message: str,
+    history: List[Dict[str, Any]],
+) -> str:
+    """
+    Render a ReAct prompt in Qwen3 chat template format for raw completion.
+
+    This function formats the conversation using Qwen3's <|im_start|> and <|im_end|> tags
+    for use with raw completion API (not chat completion).
+
+    Args:
+        system_instruction: System prompt with instructions
+        tools_description: Description of available tools
+        user_message: User's query/question
+        history: List of previous interaction steps, each containing:
+            - thought: The reasoning from the model
+            - action (optional): Tool action dict with server/tool/arguments
+            - result (optional): Result from tool execution
+            - answer (optional): Final answer from model
+
+    Returns:
+        str: Formatted prompt in Qwen3 chat template format for raw completion
+    """
+    parts: List[str] = []
+
+    # System message
+    parts.append("<|im_start|>system\n")
+    parts.append(system_instruction.strip())
+    if tools_description:
+        parts.append("\n\n")
+        parts.append(tools_description.strip())
+    parts.append("<|im_end|>\n")
+
+    # User message
+    parts.append("<|im_start|>user\n")
+    parts.append(user_message.strip())
+    parts.append("<|im_end|>\n")
+
+    # History of interactions
+    for step in history:
+        parts.append("<|im_start|>assistant\n")
+
+        # Build the JSON response
+        response_dict = {"thought": step.get("thought", "")}
+
+        if "answer" in step:
+            response_dict["answer"] = step["answer"]
+        elif "action" in step:
+            response_dict["action"] = step["action"]
+
+        parts.append(json.dumps(response_dict, ensure_ascii=False, indent=2))
+        parts.append("<|im_end|>\n")
+
+        # If there's a tool result, add it as a user message
+        if "result" in step:
+            parts.append("<|im_start|>user\n")
+            parts.append(f"Tool execution result:\n{step['result']}")
+            parts.append("<|im_end|>\n")
+
+    # Start of assistant's next response
+    parts.append("<|im_start|>assistant\n")
+
+    return "".join(parts)
+
+
+def parse_qwen3_react_response(text: str) -> Dict[str, Any]:
+    """
+    Parse the model's response in ReAct format.
+
+    Expected JSON format:
+    {
+        "thought": "reasoning text",
+        "action": {  // optional
+            "reason": "why use this tool",
+            "server": "server-name",
+            "tool": "tool-name",
+            "arguments": {...}
+        }
+    }
+    OR
+    {
+        "thought": "reasoning text",
+        "answer": "final answer"
+    }
+
+    Args:
+        text: Raw text response from the model
+
+    Returns:
+        Dict with keys: thought, action (optional), answer (optional), raw
+    """
+    # Clean up the response
+    text = text.strip()
+
+    # Remove markdown code fences more robustly
+    # Handle cases like: ```json\n{...}\n```<|im_end|>
+    # Pattern 1: Remove opening ```json or ```
+    if text.startswith("```"):
+        # Find the first newline after ```
+        newline_idx = text.find("\n")
+        if newline_idx > 0:
+            # Check if it's ```json, ```json\n, or just ```
+            first_line = text[:newline_idx]
+            if first_line.startswith("```"):
+                text = text[newline_idx + 1:]
+        else:
+            # No newline, just remove ```
+            text = text[3:]
+        text = text.strip()
+
+    # Pattern 2: Remove closing ``` (may be followed by <|im_end|> or other text)
+    # Handle: ...}\n```<|im_end|> or ...}\n```
+    if text.endswith("```"):
+        text = text[:-3].strip()
+    elif "```" in text:
+        # Find the last occurrence of ```
+        last_idx = text.rfind("```")
+        if last_idx >= 0:
+            # Check if it's at the end of a line or followed by <|im_end|>
+            remaining = text[last_idx + 3:].strip()
+            # If remaining is empty or starts with <|im_end|>, remove the ```
+            if not remaining or remaining.startswith("<|im_end|>"):
+                text = text[:last_idx].strip()
+
+    # Pattern 3: Remove <|im_end|> if present (should be removed by formatter, but handle it here too)
+    text = text.rstrip("<|im_end|>").strip()
+
+    # Remove 'json' prefix if present (after cleaning code fences)
+    if text.startswith("json"):
+        text = text[4:].strip()
+
+    # Try parsing the cleaned text directly first
+    parsed = None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        # If direct parsing fails, try to extract JSON object
+        # This handles cases where there's extra text before/after the JSON
+        # Find JSON object boundaries by matching balanced braces
+        # Start from the first { and find the matching }
+        brace_count = 0
+        start_idx = text.find('{')
+        if start_idx >= 0:
+            for i in range(start_idx, len(text)):
+                if text[i] == '{':
+                    brace_count += 1
+                elif text[i] == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        # Found matching closing brace
+                        json_text = text[start_idx:i+1]
+                        try:
+                            parsed = json.loads(json_text)
+                            # Update text to the extracted JSON for consistency
+                            text = json_text
+                            break
+                        except json.JSONDecodeError:
+                            # This JSON extraction failed, continue searching
+                            pass
+
+    if parsed is not None:
+        #########################################################
+        # Check if this follows the expected ReAct format (has thought/action/answer)
+        has_react_format = any(key in parsed for key in ["thought", "action", "answer"])
+
+        if has_react_format:
+            # Standard ReAct format
+            result = {
+                "thought": parsed.get("thought", ""),
+                "action": parsed.get("action"),
+                "answer": parsed.get("answer"),
+                "raw": text,
+            }
+        else:
+            # Model output doesn't follow ReAct format but is valid JSON
+            # Treat the entire parsed object as the final answer
+            # This handles cases where model directly outputs: {"place_name": "...", "address": "..."}
+            result = {
+                "thought": "",
+                "action": None,
+                "answer": parsed,  # Use the entire parsed JSON as the answer
+                "raw": text,
+            }
+        #########################################################
+
+        return result
+
+    # If parsing fails after all attempts, return the raw text as thought
+    return {
+        "thought": text,
+        "action": None,
+        "answer": None,
+        "raw": text,
+        "error": "JSON decode error: Could not parse JSON from response"
     }

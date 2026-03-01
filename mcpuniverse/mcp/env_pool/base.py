@@ -61,6 +61,10 @@ class EnvConfig:
     # Workspace template (for filesystem isolation)
     workspace_template: Optional[str] = None
 
+    # Extra volume mounts: list of "host_path:container_path" strings.
+    # Useful for sharing directories (e.g., blend_files) between host and container.
+    volumes: List[str] = field(default_factory=list)
+
     # If True, use Dockerfile's own CMD/ENTRYPOINT instead of appending gateway command.
     # Needed for environments that require custom startup (e.g., Blender needs Xvfb + addon
     # before gateway). The Dockerfile CMD should start the gateway itself after setup.

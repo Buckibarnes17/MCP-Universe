@@ -8,11 +8,13 @@ to decide whether to reuse an existing container (reset) or build a new image.
 # pylint: disable=broad-exception-caught,too-many-instance-attributes
 import re
 import os
+import json
 import asyncio
 import subprocess
 import socket
 import time
 import hashlib
+import tempfile
 from typing import Dict, List, Optional, Tuple
 from contextlib import closing
 
@@ -93,6 +95,24 @@ class DockerProvisioner(BaseProvisioner):
         self._building_images: Dict[str, asyncio.Event] = {}  # image -> completion event
         self._built_images: set = set()
         self._dockerfile_hash_cache: Dict[str, str] = {}
+        self._clean_docker_config_dir: Optional[str] = None
+
+    # ------------------------------------------------------------------
+    # Docker config helpers
+    # ------------------------------------------------------------------
+
+    def _get_clean_docker_config(self) -> str:
+        """Return path to a clean Docker config dir (no credential helpers).
+
+        This avoids ``error getting credentials`` failures when the host's
+        ``~/.docker/config.json`` references a broken credential helper.
+        """
+        if self._clean_docker_config_dir is None:
+            d = tempfile.mkdtemp(prefix="docker-config-mcp-")
+            with open(os.path.join(d, "config.json"), "w", encoding="utf-8") as f:
+                json.dump({}, f)
+            self._clean_docker_config_dir = d
+        return self._clean_docker_config_dir
 
     # ------------------------------------------------------------------
     # Port allocation
@@ -353,8 +373,18 @@ class DockerProvisioner(BaseProvisioner):
         cmd.extend(args)
         logger.debug("Running: {}", ' '.join(cmd))
 
+        env = os.environ.copy()
+        if self.docker_host:
+            # Auto-negotiate API version with remote daemon
+            env.setdefault("DOCKER_API_VERSION", "1.43")
+            # Use legacy builder to avoid buildx docker-container driver
+            env["DOCKER_BUILDKIT"] = "0"
+            # Override docker config to bypass broken credential helpers
+            clean_cfg_dir = self._get_clean_docker_config()
+            env["DOCKER_CONFIG"] = clean_cfg_dir
         proc = await asyncio.create_subprocess_exec(
             *cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            env=env,
         )
         stdout, stderr = await proc.communicate()
 
@@ -418,6 +448,8 @@ class DockerProvisioner(BaseProvisioner):
             wp = config.workspace_template.format(env_id=env_id)
             os.makedirs(wp, exist_ok=True)
             cmd.extend(["-v", f"{wp}:/workspace"])
+        for vol in config.volumes:
+            cmd.extend(["-v", vol])
 
         cmd.append(image_name)
 

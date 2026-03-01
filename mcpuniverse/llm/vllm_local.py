@@ -45,7 +45,7 @@ class VLLMLocalConfig(BaseConfig):
     presence_penalty: float = 0.0
     max_completion_tokens: int = 20000
     seed: int = 12345
-    reasoning: str = "high"
+    reasoning: str = "low"
 
 
 class VLLMLocalModel(BaseLLM):

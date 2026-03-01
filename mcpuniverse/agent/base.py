@@ -128,7 +128,7 @@ class Executor:
         return []
 
 
-class BaseAgent(Executor, ExportConfigMixin, metaclass=ComponentABCMeta):
+class BaseAgent(Executor, ExportConfigMixin, metaclass=ComponentABCMeta):  # pylint: disable=too-many-public-methods
     """
     The base class for all agents.
 
@@ -209,7 +209,8 @@ class BaseAgent(Executor, ExportConfigMixin, metaclass=ComponentABCMeta):
             client = await self._mcp_manager.build_client(
                 server_name,
                 transport=server.get("transport", "stdio"),
-                permissions=server.get("permissions", None)
+                permissions=server.get("permissions", None),
+                mcp_gateway_address=server.get("gateway_address", ""),
             )
             client.project_id = self._project_id
             self._mcp_clients[server_name] = client
@@ -484,6 +485,10 @@ class BaseAgent(Executor, ExportConfigMixin, metaclass=ComponentABCMeta):
         """Set a name."""
         self._name = name
         self._config.name = name
+
+    def set_llm(self, llm: BaseLLM):
+        """Replace the language model used by the agent."""
+        self._llm = llm
 
     @property
     def id(self) -> str:

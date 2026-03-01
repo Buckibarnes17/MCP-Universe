@@ -281,9 +281,8 @@ class EnvPoolManager:
 
             logger.info("Provisioning {} new environments...", can_create)
 
-            async def _create_one() -> Optional[EnvInfo]:
+            async def _create_one(provisioner: BaseProvisioner) -> Optional[EnvInfo]:
                 env_id = f"env-{uuid.uuid4().hex[:8]}"
-                provisioner = self._next_provisioner()
                 try:
                     env_info = await provisioner.create(env_id, effective_config)
                     await self._register_env(env_id, env_info, provisioner)
@@ -293,15 +292,22 @@ class EnvPoolManager:
                     return None
 
             if parallel:
+                # Pre-assign provisioners round-robin so parallel creates
+                # are evenly distributed (least-loaded doesn't work here
+                # because load counters update only after create completes).
+                assignments = [
+                    self._provisioners[i % len(self._provisioners)]
+                    for i in range(can_create)
+                ]
                 results = await asyncio.gather(
-                    *[_create_one() for _ in range(can_create)],
+                    *[_create_one(p) for p in assignments],
                     return_exceptions=True,
                 )
                 new_envs = [r for r in results if isinstance(r, EnvInfo)]
             else:
                 new_envs = []
                 for _ in range(can_create):
-                    env = await _create_one()
+                    env = await _create_one(self._next_provisioner())
                     if env:
                         new_envs.append(env)
 

@@ -12,6 +12,12 @@ from .openrouter import OpenRouterModel
 from .gemini import GeminiModel
 from .vllm_local import VLLMLocalModel
 from .claude_wr import ClaudeWRModel
+# TITO (Token In Token Out) — vLLM engine, trajectory manager, agent wrapper
+from .tito import (
+    AsyncVLLMEngine, AsyncVLLMBackend, VLLMEngineConfig,
+    TokenTrajectoryManager, TokenTrajectory, TokenSegment,
+    TITOLLMWrapper, TITOLLMConfig,
+)
 
 __all__ = [
     "OpenAIModel",
@@ -26,4 +32,14 @@ __all__ = [
     "OpenRouterModel",
     "GeminiModel",
     "VLLMLocalModel",
+    # Direct vLLM engine (no HTTP serve)
+    "AsyncVLLMEngine",
+    "AsyncVLLMBackend",
+    "VLLMEngineConfig",
+    # TITO (Token In Token Out) for RL training
+    "TokenTrajectoryManager",
+    "TokenTrajectory",
+    "TokenSegment",
+    "TITOLLMWrapper",
+    "TITOLLMConfig",
 ]

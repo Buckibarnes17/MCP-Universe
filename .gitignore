@@ -51,6 +51,9 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Claude code settings
+.claude
+
 # Translations
 *.mo
 *.pot
@@ -213,6 +216,7 @@ mcpuniverse/benchmark/configs/deepresearch/hle_text_only
 tests/mcp/logs
 tests/mcp/test_gateway_stress.sh
 tests/mcp/test_gateway_stress.py
-tests/benchmark/mcpuniverse/test_financial_analysis_docker_pool.py
-mcpuniverse/rl
-mcpuniverse/agent/react_train_agent.py
+mcpuniverse/rl/integrations
+mcpuniverse/mcp/servers/yahoo_finance_new
+mcpuniverse/benchmark/scripts
+mcpuniverse/rl/data

@@ -9,6 +9,7 @@ from .reflection import Reflection
 from .explore_and_exploit import ExploreAndExploit
 from .base import BaseAgent
 from .claude_code import ClaudeCodeAgent
+from .react_train_agent import ReActTrain
 # from .openai_agent_sdk import OpenAIAgentSDK
 
 __all__ = [
@@ -22,5 +23,7 @@ __all__ = [
     "Reflection",
     "BaseAgent",
     "ClaudeCodeAgent",
+    "ExploreAndExploit",
+    "ReActTrain"
     # "OpenAIAgentSDK"
 ]

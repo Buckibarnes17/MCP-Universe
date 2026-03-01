@@ -299,7 +299,27 @@ Return the final answer in the final channel.
 
             except Exception as e:
                 self._logger.error("Failed to process response: %s", str(e))
-                response = response + "\n\n" + "Failed to process response: " + str(e)
+                error_msg = "Failed to process response: " + str(e)
+
+                # Context length exceeded — stop immediately, no point retrying
+                if "exceeds max context length" in str(e):
+                    self._logger.warning("Context length exceeded, stopping trajectory early")
+                    last_answer = ""
+                    for entry in reversed(self._history):
+                        if "tool_result" in entry:
+                            last_answer = entry.get("analysis", "")
+                            break
+                    return AgentResponse(
+                        name=self._name,
+                        class_name=self.__class__.__name__,
+                        response=last_answer or error_msg,
+                        trace_id=tracer.trace_id,
+                    )
+
+                try:
+                    response = response + "\n\n" + error_msg
+                except UnboundLocalError:
+                    response = error_msg
                 self._add_history(
                     analysis=response,
                 )
