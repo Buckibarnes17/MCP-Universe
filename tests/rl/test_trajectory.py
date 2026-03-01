@@ -2,7 +2,9 @@
 
 import pytest
 
-from mcpuniverse.rl.trajectory import TrajectoryResult, TrajectoryStep
+from mcpuniverse.rl.trajectory import (
+    TrajectoryResult, TrajectoryStep, TraceData, TokenData,
+)
 
 
 class TestTrajectoryStep:
@@ -68,18 +70,20 @@ class TestTrajectoryResult:
         )
         assert result.error is None
         assert result.trace_id is None
-        assert result.trace_records == []
-        assert result.full_trace_text == ""
-        assert result.prompt_text == ""
-        assert result.output_text == ""
-        assert result.output_segments == []
+        # TraceData defaults
+        assert result.trace.records == []
+        assert result.trace.full_text == ""
+        assert result.trace.prompt_text == ""
+        assert result.trace.output_text == ""
+        assert result.trace.output_segments == []
         assert result.num_steps == 0
         assert result.num_tool_calls == 0
         assert result.running_time == 0.0
         assert result.rollout_mode == "text"
-        assert result.token_ids == []
-        assert result.token_segments == []
-        assert result.trainable_mask == []
+        # TokenData defaults
+        assert result.tokens.ids == []
+        assert result.tokens.segments == []
+        assert result.tokens.trainable_mask == []
 
     def test_with_all_fields(self):
         result = TrajectoryResult(
@@ -90,25 +94,29 @@ class TestTrajectoryResult:
             finish_reason="max_iterations",
             error=None,
             trace_id="trace_123",
-            full_trace_text="<|start|>system...",
-            prompt_text="System prompt",
-            output_text="Assistant response",
-            output_segments=[
-                {"role": "assistant", "content": "sunny", "trainable": True},
-            ],
+            trace=TraceData(
+                full_text="<|start|>system...",
+                prompt_text="System prompt",
+                output_text="Assistant response",
+                output_segments=[
+                    {"role": "assistant", "content": "sunny", "trainable": True},
+                ],
+            ),
             num_steps=3,
             num_tool_calls=1,
             running_time=2.5,
             rollout_mode="token",
-            token_ids=[1, 2, 3, 4, 5],
-            trainable_mask=[False, False, True, True, True],
+            tokens=TokenData(
+                ids=[1, 2, 3, 4, 5],
+                trainable_mask=[False, False, True, True, True],
+            ),
         )
         assert result.num_steps == 3
         assert result.num_tool_calls == 1
         assert result.running_time == 2.5
         assert result.rollout_mode == "token"
-        assert len(result.token_ids) == 5
-        assert len(result.trainable_mask) == 5
+        assert len(result.tokens.ids) == 5
+        assert len(result.tokens.trainable_mask) == 5
 
     def test_with_error(self):
         result = TrajectoryResult(
@@ -139,6 +147,32 @@ class TestTrajectoryResult:
         assert d["reward"] == 1.0
         assert d["num_steps"] == 2
 
+    def test_to_dict_flattens_sub_dataclasses(self):
+        result = TrajectoryResult(
+            instance_id="t_flat",
+            trajectory_id=0,
+            response="ok",
+            reward=1.0,
+            finish_reason="done",
+            trace=TraceData(
+                full_text="full",
+                prompt_text="prompt",
+                output_text="output",
+            ),
+            rollout_mode="token",
+            tokens=TokenData(
+                ids=[1, 2, 3],
+                trainable_mask=[False, True, True],
+            ),
+        )
+        d = result.to_dict()
+        # to_dict() flattens TraceData and TokenData for backward compat
+        assert d["full_trace_text"] == "full"
+        assert d["prompt_text"] == "prompt"
+        assert d["output_text"] == "output"
+        assert d["token_ids"] == [1, 2, 3]
+        assert d["trainable_mask"] == [False, True, True]
+
     def test_get_training_text(self):
         result = TrajectoryResult(
             instance_id="t5",
@@ -146,8 +180,10 @@ class TestTrajectoryResult:
             response="answer",
             reward=1.0,
             finish_reason="done",
-            prompt_text="prompt part",
-            output_text="output part",
+            trace=TraceData(
+                prompt_text="prompt part",
+                output_text="output part",
+            ),
         )
         text = result.get_training_text()
         assert isinstance(text, str)
@@ -159,9 +195,11 @@ class TestTrajectoryResult:
             response="answer",
             reward=1.0,
             finish_reason="done",
-            token_ids=[10, 20, 30],
-            trainable_mask=[False, True, True],
-            token_segments=[{"type": "prompt"}, {"type": "output"}, {"type": "output"}],
+            tokens=TokenData(
+                ids=[10, 20, 30],
+                trainable_mask=[False, True, True],
+                segments=[{"type": "prompt"}, {"type": "output"}, {"type": "output"}],
+            ),
         )
         tokens = result.get_training_tokens()
         assert isinstance(tokens, dict)
