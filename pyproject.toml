@@ -73,6 +73,7 @@ dependencies = [
     "pandas>=2.0.0",
     "numpy>=1.24.0",
     "notion-client==2.7.0",
+    "sqlalchemy[asyncio]==2.0.41"
 ]
 
 [project.optional-dependencies]
